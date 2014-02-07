@@ -1,0 +1,35 @@
+#!/bin/sh
+#
+set -e
+
+. /etc/default/openmediavault
+. /usr/share/openmediavault/scripts/helper-functions
+
+case "$1" in
+        purge)
+                if [ -f "/var/run/pyload/pyload.pid" ]; then
+                        PID=$(cat /var/run/pyload/pyload.pid);
+                        kill -0 $PID 2>/dev/null;
+                        if [ $? -eq 0 ]; then
+                                kill -9 $PID;
+                                rm -Rf /var/run/pyload
+                        fi
+                fi
+
+                if [ -d "/usr/share/pyload" ]; then
+                        rm -Rf /usr/share/pyload
+                fi
+                omv_config_delete "//services/pyload"
+                userdel -r pyload
+        ;;
+
+        remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+        *)
+        echo "postrm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

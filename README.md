@@ -1,0 +1,4 @@
+openmediavault-sabnzbd
+======================
+
+sabnzbd plugin

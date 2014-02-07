@@ -1,0 +1,60 @@
+#!/bin/bash
+#
+# @license   http://www.gnu.org/licenses/gpl.html GPL Version 3
+# @author    Marcel Beck <marcel.beck@mbeck.org>
+# @copyright Copyright (c) 2012 Marcel Beck
+#
+# This file is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+#
+# This file is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this file. If not, see <http://www.gnu.org/licenses/>.
+
+set -e
+
+. /etc/default/openmediavault
+. /usr/share/openmediavault/scripts/helper-functions
+
+update() {
+service sabnzbd stop
+ver1=`wget -q http://sabnzbd.org/download/ -O - | \grep sourceforge\.net | grep Linux | \sed 's/.*href=\"\(.*\)\".*/\1/' | sed 's/.*-\(.*\)-.*/\1/'`
+if [ "$ver1" == "" ]; then
+    exit
+fi
+wget -q -nv http://downloads.sourceforge.net/project/sabnzbdplus/sabnzbdplus/${ver1}/SABnzbd-${ver1}-src.tar.gz -O /tmp/sabnzbdplus.tar.gz
+tar xzf /tmp/sabnzbdplus.tar.gz -C /tmp/
+cp -fRa /tmp/SABnzbd-${ver1}/. /opt/SABnzbd/
+rm -fR /tmp/sabnzbdplus.tar.gz
+rm -fR /tmp/SABnzbd-${ver1}
+chown sabnzbd:users /opt/SABnzbd -R
+chmod 775 /opt/SABnzbd -R
+}
+
+getsettings() {
+ver1=`wget -q http://sabnzbd.org/download/ -O - | \grep sourceforge\.net | grep Linux | \sed 's/.*href=\"\(.*\)\".*/\1/' | sed 's/.*-\(.*\)-.*/\1/'`
+ver2=`cat /opt/SABnzbd/sabnzbd/version.py | grep '__version__ = ' | sed 's/__version__ = "\(.*\)"/\1/g'`
+#ver2=0.7.00 #use to test if button shows if values do not match
+if [ "$ver1" == "$ver2" ]; then
+    xmlstarlet ed -L -u "//services/sabnzbd/update" -v 0 -n ${OMV_CONFIG_FILE}
+else
+    xmlstarlet ed -L -u "//services/sabnzbd/update" -v 1 -n ${OMV_CONFIG_FILE}
+fi
+}
+
+case "$2" in
+  update)
+    update
+    ;;
+  getsettings)
+    getsettings
+    ;;
+  *)
+    exit 1
+esac

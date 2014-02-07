@@ -1,0 +1,8 @@
+usr/bin/*					usr/bin
+usr/share/applications/*	usr/share/applications
+usr/share/doc/*				usr/share/doc
+usr/share/openmediavault/*  usr/share/openmediavault
+usr/share/pixmaps/*			usr/share/pixmaps
+usr/share/pyload/*			usr/share/pyload
+var/www/openmediavault/*    var/www/openmediavault
+

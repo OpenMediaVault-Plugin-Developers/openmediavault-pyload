@@ -1,0 +1,8 @@
+openmediavault-pyload (0.5.0) stable; urgency=low
+
+  [ OpenMediaVault Plugin Developers ]
+  * Initial release
+
+  [ root ]
+
+ -- root <root@localhost.localdomain>  Fri, 07 Feb 2014 15:39:55 +0000

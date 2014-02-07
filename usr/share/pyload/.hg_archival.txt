@@ -1,0 +1,5 @@
+repo: 11432db54cfea3fe8ecb9f8fe938e4e27f8262ad
+node: bc6ddff64305ec0349f7b8bd0969a92decd6bd15
+branch: hotfixes
+latesttag: v0.4.9
+latesttagdistance: 2
