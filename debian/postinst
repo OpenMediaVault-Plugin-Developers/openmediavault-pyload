@@ -5,28 +5,50 @@ set -e
 . /etc/default/openmediavault
 . /usr/share/openmediavault/scripts/helper-functions
 
+RUN_AS="pyload"
+RUN_GROUP="users"
+
+SERVICE_NAME="pyload"
+
+PYLOAD_HOME_DIR="/home/pyload/.pyload"
+PYLOAD_CONFIG="${PYLOAD_HOME_DIR}/pyload.conf"
+
+PYLOAD_PID="/var/run/pyload/pyload-8080.pid"
+
+PYLOAD_USR_DB="/usr/share/pyload/files.db"
+PYLOAD_HOME_DB="${PYLOAD_HOME_DIR}/files.db"
+
+PYLOAD_CLI="/usr/bin/pyLoadCli"
+PYLOAD_CORE="/usr/bin/pyLoadCore"
+
+PYLOAD_CLI_USR="/usr/share/pyload/pyLoadCli.py"
+PYLOAD_CORE_USR="/usr/share/pyload/pyLoadCore.py"
+
+PYLOAD_INIT="/etc/init.d/pyload"
+
 case "$1" in
 configure)
-    if ! grep -q "^pyload:" /etc/passwd; then
-        echo "Adding pyload user..."
-        useradd --create-home --groups users --no-user-group --shell /usr/sbin/nologin pyload
+    if ! grep -q "^${RUN_AS}:" /etc/passwd; then
+        echo "Adding ${RUN_AS} user..."
+        useradd --create-home --groups ${RUN_GROUP} --no-user-group --shell /usr/sbin/nologin ${RUN_AS}
     else
-        echo "pyload user already exists."
+        echo "${RUN_AS} user already exists."
     fi
 
-    if [ -f "/var/run/pyload/pyload-8080.pid" ]; then
-        PID=$(cat /var/run/pyload/pyload-8080.pid);
+    if [ -f "${PYLOAD_PID}" ]; then
+        PID=$(cat ${PYLOAD_PID});
         kill -0 $PID 2>/dev/null;
         if [ $? -eq 0 ]; then
             kill -9 $PID;
-            rm -Rf /var/run/pyload
+            rm -Rf "/var/run/${SERVICE_NAME}"
         fi
     fi
 
-    #mkdir -p /home/pyload/.pyload
-    if [ ! -f "/home/pyload/.pyload/pyload.conf" ]; then
-        mkdir -p /home/pyload/.pyload
-        echo 'version: 1
+    if [ ! -f "${PYLOAD_CONFIG}" ]; then
+        mkdir -p "${PYLOAD_HOME_DIR}"
+
+        cat <<EOF > ${PYLOAD_CONFIG}
+version: 1
 
 remote - "Remote":
         bool nolocalauth : "No authentication on local connections" = True
@@ -99,33 +121,35 @@ download - "Download":
 
 downloadTime - "Download Time":
         time start : "Start" = 0:00
-        time end : "End" = 0:00' > /home/pyload/.pyload/pyload.conf
+        time end : "End" = 0:00
+EOF
+
     fi
 
-    if [ ! -f /home/pyload/.pyload/files.db ]; then
-        cp /usr/share/pyload/files.db /home/pyload/.pyload/files.db
-        chown pyload:users /usr/share/pyload/files.db
-        chmod 755 /usr/share/pyload/files.db
+    if [ ! -f "${PYLOAD_HOME_DB}" ]; then
+        cp "${PYLOAD_USR_DB}" "${PYLOAD_HOME_DB}"
+        chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_USR_DB}"
+        chmod 755 "${PYLOAD_USR_DB}"
     fi
 
-    rm -Rf /usr/share/pyload/files.db
-    chown pyload:users /etc/init.d/pyload
-    chown pyload:users /usr/bin/pyLoadCli
-    chown pyload:users /usr/bin/pyLoadCore
-    chown pyload:users /home/pyload/.pyload -R
-    chmod 775 /usr/bin/pyLoadCli
-    chmod 775 /usr/bin/pyLoadCore
-    chmod 755 /usr/share/pyload/pyLoadCore.py
-    chmod 755 /usr/share/pyload/pyLoadCli.py
-    insserv -d pyload
+    rm -Rf "${PYLOAD_USR_DB}"
+    chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_INIT}"
+    chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_CLI}"
+    chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_CORE}"
+    chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_HOME_DIR}" -R
+    chmod 775 "${PYLOAD_CLI}"
+    chmod 775 "${PYLOAD_CORE}"
+    chmod 755 "${PYLOAD_CORE_USR}"
+    chmod 755 "${PYLOAD_CLI_USR}"
+    insserv -d ${SERVICE_NAME}
 
-    if ! omv_config_exists "/config/services/pyload"; then
+    if ! omv_config_exists "/config/services/${SERVICE_NAME}"; then
         echo "Initial configuration."
         object="<enable>0</enable>"
-        omv_config_add_element "/config/services" "pyload" "${object}" true
+        omv_config_add_element "/config/services" "${SERVICE_NAME}" "${object}" true
     fi
 
-    update-rc.d pyload disable
+    update-rc.d ${SERVICE_NAME} disable
 
     echo "Default username is:  admin"
 	echo "Default password is:  openmediavault"
