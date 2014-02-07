@@ -126,6 +126,10 @@ downloadTime - "Download Time":
     fi
 
     update-rc.d pyload disable
+
+    echo "Default username is:  admin"
+	echo "Default password is:  openmediavault"
+
     ;;
 abort-upgrade|abort-remove|abort-deconfigure)
     ;;
