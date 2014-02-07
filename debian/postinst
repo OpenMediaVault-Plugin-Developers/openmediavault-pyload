@@ -152,7 +152,7 @@ EOF
     update-rc.d ${SERVICE_NAME} disable
 
     echo "Default username is:  admin"
-	echo "Default password is:  openmediavault"
+    echo "Default password is:  openmediavault"
 
     ;;
 abort-upgrade|abort-remove|abort-deconfigure)
