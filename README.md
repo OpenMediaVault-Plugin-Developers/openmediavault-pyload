@@ -1,4 +1,4 @@
-openmediavault-sabnzbd
+openmediavault-pyload
 ======================
 
-sabnzbd plugin
+pyload plugin
