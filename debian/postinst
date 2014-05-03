@@ -154,6 +154,13 @@ EOF
     echo "Default username is:  admin"
     echo "Default password is:  openmediavault"
 
+	omv_install_fixperms
+	
+	# Activate package triggers. These triggers are only set during the
+	# package installation.
+	dpkg-trigger update-fixperms
+	dpkg-trigger update-locale
+
     ;;
 abort-upgrade|abort-remove|abort-deconfigure)
     ;;
