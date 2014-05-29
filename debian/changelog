@@ -1,3 +1,9 @@
+openmediavault-pyload (0.6.0) unstable; urgency=low
+
+  * Initial release for kralizec
+
+ -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Thu, 29 May 2014 06:51:29 -0500
+
 openmediavault-pyload (0.5.0) stable; urgency=low
 
   [ OpenMediaVault Plugin Developers ]
