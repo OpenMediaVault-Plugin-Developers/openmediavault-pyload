@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Copyright (C)      2013 OpenMediaVault Plugin Developers
+ * Copyright (C) 2013-2014 OpenMediaVault Plugin Developers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,69 +17,92 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-require_once "openmediavault/module.inc";
 require_once "openmediavault/config.inc";
 require_once "openmediavault/error.inc";
-require_once "openmediavault/util.inc";
 require_once "openmediavault/initscript.inc";
+require_once "openmediavault/module.inc";
+require_once "openmediavault/util.inc";
 
-class OMVModulePyload extends OMVModuleServiceAbstract
-    implements OMVINotifyListener, OMVIModuleServiceStatus {
+class OMVModulePyload extends OMVModuleServiceAbstract implements
+    OMVINotifyListener,
+    OMVIModuleServiceStatus
+{
+    private function getPluginName()
+    {
+        return strtolower($this->getName());
+    }
+
+    private function getEventMessagePath()
+    {
+        return sprintf("org.openmediavault.service.%s", $this->getPluginName());
+    }
+
+    private function getXPath()
+    {
+        return sprintf("//services/%s", $this->getPluginName());
+    }
 
     public function getName() {
         return "PyLoad";
     }
 
-    public function getStatus() {
+    public function getStatus()
+    {
         global $xmlConfig;
-        $xpath  = "//services/pyload";
-        $object = $xmlConfig->get($xpath);
-        if (is_null($object))
-                        throw new OMVException(OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED, $xpath);
 
-        $cmd = "/etc/init.d/pyload status";
-        $this->exec($cmd, $output);
+        $object = $xmlConfig->get($this->getXPath());
+
+        if (is_null($object)) {
+            throw new OMVException(
+                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
+                $this->getXPath()
+            );
+        }
+
+        $initd = new OMVSysVInitScript($this->getPluginName());
+
         return array(
-            "name"    => $this->getName(),
-            "title"   => gettext("PyLoad"),
-            "enabled" => boolval($object['enable']),
-            "running" => (strpos($output[0], 'is running') > 0)
+            "name"    => $this->getPluginName(),
+            "title"   => gettext($this->getName()),
+            "enabled" => boolval($object["enable"]),
+            "running" => $initd->status() == 0
         );
     }
 
-    public function startService() {
+    public function startService()
+    {
         global $xmlConfig;
-        $xpath  = "//services/pyload";
-        $object = $xmlConfig->get($xpath);
-        if (is_null($object))
-                        throw new OMVException(OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED, $xpath);
 
-        if(FALSE === boolval($object['enable']))
+        $object = $xmlConfig->get($this->getXPath());
+
+        if (is_null($object)) {
+            throw new OMVException(
+                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
+                $this->getXPath()
+            );
+        }
+
+        if (!boolval($object["enable"])) {
             return;
+        }
 
-                $initd = new OMVSysVInitScript("pyload", TRUE);
-                $initd->exec();
+        $initd = new OMVSysVInitScript($this->getPluginName(), true);
+        $initd->exec();
     }
 
-    public function stopService() {
-        global $xmlConfig;
-        $xpath  = "//services/pyload";
-        $object = $xmlConfig->get($xpath);
-        if (is_null($object))
-                        throw new OMVException(OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED, $xpath);
-
-        if(TRUE === boolval($object['enable']))
-            return;
-
-                $initd = new OMVSysVInitScript("pyload", FALSE);
-                $initd->exec();
+    public function stopService()
+    {
+        $initd = new OMVSysVInitScript($this->getPluginName());
+        $initd->exec();
     }
 
-    public function bindListeners(OMVNotifyDispatcher $dispatcher) {
+    public function bindListeners(OMVNotifyDispatcher $dispatcher)
+    {
         $dispatcher->addListener(
             OMV_NOTIFY_MODIFY,
-            "org.openmediavault.services.pyload",
-            array($this, "setDirty"));
+            $this->getEventMessagePath(),
+            array($this, "setDirty")
+        );
     }
 }
 
