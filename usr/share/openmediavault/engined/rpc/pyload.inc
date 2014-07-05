@@ -79,13 +79,13 @@ class OMVRpcServicePyload extends OMVRpcServiceAbstract
         if (is_null($object)) {
             throw new OMVException(
                 OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $XPath
+                $this->getXPath()
             );
         }
 
         // Modify result data
-        $object['enable']  = boolval($object['enable']);
-        $object['showtab'] = boolval($object['showtab']);
+        $object["enable"]  = boolval($object["enable"]);
+        $object["showtab"] = boolval($object["showtab"]);
 
         return $object;
     }
@@ -115,7 +115,7 @@ class OMVRpcServicePyload extends OMVRpcServiceAbstract
         if (is_null($oldObject)) {
             throw new OMVException(
                 OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $XPath
+                $this->getXPath()
             );
         }
 

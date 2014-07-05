@@ -2,13 +2,13 @@ Source: openmediavault-pyload
 Section: misc
 Priority: optional
 Maintainer: OpenMediaVault Plugin Developers <plugins@omv-extras.org>
-Build-Depends: debhelper (>= 9.0.0)
+Build-Depends: debhelper (>= 9 )
 Standards-Version: 3.9.3
 Homepage: http://omv-extras.org/
 
 Package: openmediavault-pyload
 Architecture: all
-Depends: openmediavault (>= 0.6.0.6),
+Depends: ${misc:Depends}, openmediavault (>= 0.6),
  python (>= 2.5), python-pycurl, python-crypto, unrar, python-openssl, tesseract-ocr, tesseract-ocr-eng, python-imaging
 Recommends: rhino
 Description: OpenMediaVault pyLoad plugin
