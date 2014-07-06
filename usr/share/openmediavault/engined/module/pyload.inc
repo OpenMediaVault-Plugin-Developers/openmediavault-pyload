@@ -39,7 +39,7 @@ class OMVModulePyload extends OMVModuleServiceAbstract implements
 
     private function getXPath()
     {
-        return sprintf("org.openmediavault.service.%s", $this->getPluginName());
+        return sprintf("//services/%s", $this->getPluginName());
     }
 
     public function getName()
