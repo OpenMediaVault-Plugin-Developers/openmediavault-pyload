@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2013 OpenMediaVault Plugin Developers
+ * Copyright (C) 2013-2014 OpenMediaVault Plugin Developers
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,9 +23,20 @@ Ext.define("OMV.module.admin.service.pyload.WebInterface", {
 
     initComponent : function() {
         var me = this;
-        var link = 'http://' + location.hostname + ':8888/';
 
-        me.html = "<iframe src='" + link + "' width='100%' height='100%' />";
+        OMV.Rpc.request({
+            scope    : this,
+            callback : function(id, success, response) {
+                var link = "http://" + window.location.hostname + ":" + response.port;
+                me.html = "<iframe src='" + link + "' sandbox='allow-same-origin allow-forms allow-scripts' width='100%' height='100%' />";
+            },
+            relayErrors : false,
+            rpcData     : {
+                service  : "Pyload",
+                method   : "getSettings"
+            }
+        });
+
         me.callParent(arguments);
     }
 });

@@ -28,8 +28,7 @@ require_once "openmediavault/util.inc";
 
 class OMVRpcServicePyload extends OMVRpcServiceAbstract
 {
-    private $pyloadSettingsDir = "/somepath/";
-    private $pyloadSettingsFile = "/somepath/settings.conf";
+    private $pyloadSettingsFile = "/home/pyload/.pyload/pyload.conf";
 
     private function getPluginName()
     {
@@ -46,24 +45,14 @@ class OMVRpcServicePyload extends OMVRpcServiceAbstract
         return sprintf("//services/%s", $this->getPluginName());
     }
 
-    private function getXPathForks()
-    {
-        return sprintf("%s/forks", $this->getXPath());
-    }
-
-    private function getXPathFork()
-    {
-        return sprintf("%s/fork", $this->getXPathForks());
-    }
-
     public function getName() {
         return 'Pyload';
     }
 
     public function initialize()
     {
-        $this->registerMethod('getSettings');
-        $this->registerMethod('setSettings');
+        $this->registerMethod("getSettings");
+        $this->registerMethod("setSettings");
     }
 
     public function getSettings($params, $context)
@@ -83,10 +72,23 @@ class OMVRpcServicePyload extends OMVRpcServiceAbstract
             );
         }
 
-        // Modify result data
-        $object["enable"]  = boolval($object["enable"]);
-        $object["showtab"] = boolval($object["showtab"]);
+        if (file_exists($this->pyloadSettingsFile)) {
+            $cmd = sprintf("grep -m2 Port %s | tail -n1 | cut -d ' ' -f 6", $this->pyloadSettingsFile);
+            if (0 !== $this->exec($cmd, $output)) {
+                throw new OMVException(
+                    OMVErrorMsg::E_EXEC_FAILED,
+                    $cmd,
+                    implode("\n", $output)
+                );
+            }
+        } else {
+            $output[0] = 8888;
+        }
 
+        // Modify result data
+        $object['enable']  = boolval($object['enable']);
+        $object['showtab'] = boolval($object['showtab']);
+        $object['port']    = $output[0];
         return $object;
     }
 
@@ -103,8 +105,9 @@ class OMVRpcServicePyload extends OMVRpcServiceAbstract
             '{
                 "type"       : "object",
                 "properties" : {
-                    "enable"    : { "type" : "boolean" },
-                    "showtab"   : { "type" : "boolean" }
+                    "enable"  : { "type" : "boolean" },
+                    "showtab" : { "type" : "boolean" },
+                    "port"    : { "type" : "integer" }
                 }
             }'
         );
@@ -122,7 +125,8 @@ class OMVRpcServicePyload extends OMVRpcServiceAbstract
         // Prepare configuration data
         $object = array(
             "enable"    => array_boolval($params, "enable"),
-            "showtab"   => array_boolval($params, "showtab")
+            "showtab"   => array_boolval($params, "showtab"),
+            "port"      => $params["port"],
         );
 
         // Set configuration object

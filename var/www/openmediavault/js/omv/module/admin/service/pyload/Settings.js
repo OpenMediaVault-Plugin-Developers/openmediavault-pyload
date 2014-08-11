@@ -22,22 +22,18 @@
 // require("js/omv/form/plugin/LinkedFields.js")
 
 Ext.define("OMV.module.admin.service.pyload.Settings", {
-    extend : "OMV.workspace.form.Panel",
-    uses   : [
+    extend   : "OMV.workspace.form.Panel",
+    requires : [
         "OMV.data.Model",
         "OMV.data.Store"
     ],
-
-    rpcService   : "Pyload",
-    rpcGetMethod : "getSettings",
-    rpcSetMethod : "setSettings",
 
     initComponent : function () {
         var me = this;
 
         me.on('load', function () {
             var checked = me.findField('enable').checked;
-            var showtab = me.findField('showtab').checked;
+            var showtab = me.findField("showtab").checked;
             var parent = me.up('tabpanel');
 
             if (!parent)
@@ -53,6 +49,20 @@ Ext.define("OMV.module.admin.service.pyload.Settings", {
 
         me.callParent(arguments);
     },
+
+    rpcService   : "Pyload",
+    rpcGetMethod : "getSettings",
+    rpcSetMethod : "setSettings",
+
+    plugins      : [{
+        ptype        : "linkedfields",
+        correlations : [{
+            name       : [
+                "port",
+            ],
+            properties : "!show"
+        }]
+    }],
 
     getFormItems : function() {
         var me = this;
@@ -75,14 +85,27 @@ Ext.define("OMV.module.admin.service.pyload.Settings", {
                 boxLabel   : _("Show tab containing PyLoad web interface frame."),
                 checked    : false
             },{
+                xtype: "numberfield",
+                name: "port",
+                fieldLabel: _("Port"),
+                vtype: "port",
+                minValue: 1,
+                maxValue: 65535,
+                allowDecimals: false,
+                allowBlank: true,
+                value: 8888
+            },{
                 xtype   : "button",
                 name    : "openpyload",
-                text    : _("PyLoad Web Interface"),
+                text    : _("Pyload Web Interface"),
                 scope   : this,
                 handler : function() {
-                    var link = 'http://' + location.hostname + ':8888/';
-                    window.open(link, '_blank');
-                }
+                    var me = this;
+                    var port = me.getForm().findField("port").getValue();
+                    var link = "http://" + location.hostname + ":" + port + "/";
+                    window.open(link, "_blank");
+                },
+                margin : "0 0 5 0"
             },{
                 border: false,
                 html: "<br />"
