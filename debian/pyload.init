@@ -12,65 +12,78 @@
 # Description:       This script runs the pyload service
 ### END INIT INFO
 
-# Starts and stops the pyload daemon.
+set -e
 
-PATH=/bin:/usr/bin:/sbin:/usr/sbin
-DAEMON=/usr/share/pyload/pyLoadCore.py
-PIDFILE="/var/run/pyload/pyload.pid"
+############### BEGIN EDIT ME ################
+RUN_AS=pyload
+RUN_GRP=users
+APP_PATH=/usr/share/pyload
+DAEMON=/usr/bin/python
+PID_FILE=/var/run/pyload/pyload.pid
+PID_PATH=$(dirname $PID_FILE)
+NAME=pyload
+DESC=pyload
+DAEMON_OPTS="${APP_PATH}/pyLoadCore.py --daemon --pidfile=${PID_FILE}"
+############### END EDIT ME ##################
 
+# Get lsb functions
 . /lib/lsb/init-functions
 
-start() {
-    log_daemon_msg "Starting pyLoad server"
+# Create PID directory if not exist and ensure the pyload user can write to it
+if [ ! -d $PID_PATH ]; then
+    mkdir -p $PID_PATH
+    chown $RUN_AS $PID_PATH
+fi
 
-    sudo -u pyload $DAEMON --daemon
-
-    if [ $? != 0 ]; then
-        log_end_msg 1
-        exit 1
-    else
-        log_end_msg 0
+if [ -e $PID_FILE ]; then
+    PID=`cat $PID_FILE`
+    if ! kill -0 $PID > /dev/null 2>&1; then
+        echo "Removing stale $PID_FILE"
+        rm $PID_FILE
     fi
-}
+fi
 
-stop() {
-    log_daemon_msg "Stoping pyLoad server"
-
-    sudo -u pyload $DAEMON -q
-
-    if [ $? != 0 ]; then
-        log_end_msg 1
-#        exit 1
-    else
-        log_end_msg 0
-    fi
-}
+is_running=`ps ax | grep pyLoad | awk '{ print $1 }' | wc -l`
 
 case "$1" in
     start)
-	    start
-	;;
-
-    stop)
-	    stop
-	;;
-
-    force-reload)
-	   stop
-	   sleep 5
-	   start
+        if [ "$is_running" -gt 1 ]; then
+                echo "pyload already running..."
+                exit 0
+        fi
+        echo -n "Starting pyload: "
+        start-stop-daemon -d $APP_PATH -c $RUN_AS --start --pidfile $PID_FILE --exec $DAEMON -- $DAEMON_OPTS > /dev/null 2>&1
+        sleep 1
+        echo "done"
         ;;
-
+    stop)
+        if [ "$is_running" -eq 1 ]; then
+                echo "pyload is not running (no process found)..."
+                exit 0
+        fi
+        echo -n "Killing pyload: "
+        # Trying to kill the Plex Media Server itself but also the Plug-ins
+        ps ax | grep py[L]oad | awk '{ print $1 }' | xargs kill -9 >/dev/null 2>&1
+        sleep 1
+        echo "done"
+        ;;
     restart)
-	    stop
-	    sleep 2
-	    start
-	;;
-
+        sh $0 stop
+        sh $0 start
+        ;;
+    status)
+        if [ "$is_running" -gt 1 ]; then
+                echo "pyload Server process running."
+                return 0
+        else
+                echo "It seems that pyload Server isn't running (no process found)."
+                return 1
+        fi
+        ;;
     *)
-	echo "Usage: $0 {start|stop|restart|force-reload}"
-	exit 1
-	;;
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
 esac
 
 exit 0
