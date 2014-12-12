@@ -1,3 +1,9 @@
+openmediavault-pyload (1.0.2) unstable; urgency=low
+
+  * Add custom debian/control field XB-Plugin-Section
+
+ -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Fri, 12 Dec 2014 07:02:59 -0600
+
 openmediavault-pyload (1.0.1) unstable; urgency=low
 
   * spidermonkey-bin dependency
