@@ -10,8 +10,7 @@ Homepage: http://omv-extras.org/
 Package: openmediavault-pyload
 Architecture: all
 Depends: ${misc:Depends}, openmediavault (>= 0.6),
- python (>= 2.5), python-pycurl, python-crypto, unrar, python-openssl, tesseract-ocr, tesseract-ocr-eng, python-imaging, spidermonkey-bin
-Recommends: rhino
+ python (>= 2.5), python-pycurl, python-crypto, unrar | unrar-nonfree, python-openssl, tesseract-ocr, tesseract-ocr-eng, python-imaging, spidermonkey-bin | rhino
 Description: OpenMediaVault pyLoad plugin
  pyLoad is a fast, lightweight and full featured download manager
  for many One-Click-Hoster,container formats like DLC,
