@@ -1,119 +1,247 @@
 # -*- coding: utf-8 -*-
 
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-
-    @author: mkaay
-    @interface-version: 0.1
-"""
-
+import os
 import subprocess
-from os import listdir, access, X_OK, makedirs
-from os.path import join, exists, basename
 
-from module.plugins.Hook import Hook
-from module.utils import save_join
+from module.plugins.internal.Addon import Addon, Expose
+from module.utils import fs_encode, save_join as fs_join
 
-class ExternalScripts(Hook):
-    __name__ = "ExternalScripts"
-    __version__ = "0.21"
+
+class ExternalScripts(Addon):
+    __name__    = "ExternalScripts"
+    __type__    = "hook"
+    __version__ = "0.46"
+    __status__  = "testing"
+
+    __config__ = [("activated", "bool", "Activated"         , True ),
+                  ("lock"     , "bool", "Wait script ending", False)]
+
     __description__ = """Run external scripts"""
-    __config__ = [("activated", "bool", "Activated", "True")]
-    __author_name__ = ("mkaay", "RaNaN", "spoob")
-    __author_mail__ = ("mkaay@mkaay.de", "ranan@pyload.org", "spoob@pyload.org")
+    __license__     = "GPLv3"
+    __authors__     = [("mkaay"         , "mkaay@mkaay.de"   ),
+                       ("RaNaN"         , "ranan@pyload.org" ),
+                       ("spoob"         , "spoob@pyload.org" ),
+                       ("Walter Purcaro", "vuolter@gmail.com")]
 
-    event_list = ["unrarFinished", "allDownloadsFinished", "allDownloadsProcessed"]
 
-    def setup(self):
+    def init(self):
+        self.info['oldip'] = None
         self.scripts = {}
 
-        folders = ['download_preparing', 'download_finished', 'package_finished',
-                   'before_reconnect', 'after_reconnect', 'unrar_finished',
-                   'all_dls_finished', 'all_dls_processed']
+        self.event_list = ["archive_extract_failed", "archive_extracted"     ,
+                           "package_extract_failed", "package_extracted"     ,
+                           "all_archives_extracted", "all_archives_processed"]
+        self.event_map  = {'allDownloadsFinished' : "all_downloads_finished" ,
+                           'allDownloadsProcessed': "all_downloads_processed",
+                           'packageDeleted'       : "package_deleted"        }
+
+        folders = ["pyload_start", "pyload_restart", "pyload_stop",
+                   "before_reconnect", "after_reconnect",
+                   "download_preparing", "download_failed", "download_finished",
+                   "archive_extract_failed", "archive_extracted",
+                   "package_finished", "package_deleted", "package_extract_failed", "package_extracted",
+                   "all_downloads_processed", "all_downloads_finished",  #@TODO: Invert `all_downloads_processed`, `all_downloads_finished` order in 0.4.10
+                   "all_archives_extracted", "all_archives_processed"]
 
         for folder in folders:
+            path = os.path.join("scripts", folder)
+            self.init_folder(folder, path)
 
-            self.scripts[folder] = []
+        for folder, scripts in self.scripts.items():
+            if scripts:
+                self.log_info(_("Installed scripts in folder `%s`: %s")
+                              % (folder, ", ".join(scripts)))
 
-            self.initPluginType(folder, join(pypath, 'scripts', folder))
-            self.initPluginType(folder, join('scripts', folder))
-
-        for script_type, names in self.scripts.iteritems():
-            if names:
-                self.logInfo((_("Installed scripts for %s: ") % script_type ) + ", ".join([basename(x) for x in names]))
+        self.pyload_start()
 
 
-    def initPluginType(self, folder, path):
-        if not exists(path):
+    def init_folder(self, name, path):
+        self.scripts[name] = []
+
+        if not os.path.isdir(path):
             try:
-                makedirs(path)
-            except :
-                self.logDebug("Script folder %s not created" % folder)
+                os.makedirs(path)
+
+            except OSError, e:
+                self.log_debug(e)
                 return
 
-        for f in listdir(path):
-            if f.startswith("#") or f.startswith(".") or f.startswith("_") or f.endswith("~") or f.endswith(".swp"):
+        for file in os.listdir(path):
+            if not os.path.isfile(file):
                 continue
 
-            if not access(join(path,f), X_OK):
-                self.logWarning(_("Script not executable:") + " %s/%s" % (folder, f))
+            if file[0] in ("#", "_") or file.endswith("~") or file.endswith(".swp"):
+                continue
 
-            self.scripts[folder].append(join(path, f))
+            if not os.access(file, os.X_OK):
+                self.log_warning(_("Script not executable: [%s] %s") % (name, file))
 
-    def callScript(self, script, *args):
+            self.scripts[name].append(file)
+
+
+    @Expose
+    def call(self, script, args=[], lock=False):
         try:
-            cmd = [script] + [str(x) if not isinstance(x, basestring) else x for x in args]
-            #output goes to pyload
-            subprocess.Popen(cmd, bufsize=-1)
+            script = os.path.abspath(script)
+            args   = [script] + map(encode, args)
+
+            self.log_info(_("EXECUTE [%s] %s") % (os.path.dirname(script), args))
+            p = subprocess.Popen(args, bufsize=-1)  #@NOTE: output goes to pyload
+            if lock:
+                p.communicate()
+
         except Exception, e:
-            self.logError(_("Error in %(script)s: %(error)s") % { "script" :basename(script), "error": str(e)})
-
-    def downloadPreparing(self, pyfile):
-        for script in self.scripts['download_preparing']:
-            self.callScript(script, pyfile.pluginname, pyfile.url, pyfile.id)
-
-    def downloadFinished(self, pyfile):
-        for script in self.scripts['download_finished']:
-            self.callScript(script, pyfile.pluginname, pyfile.url, pyfile.name, pyfile.id,
-                            save_join(self.core.config['general']['download_folder'], pyfile.package().folder, pyfile.name),
-                            pyfile.id)
+            self.log_error(_("Runtime error: %s") % script, e or _("Unknown error"))
 
 
-    def packageFinished(self, pypack):
-        for script in self.scripts['package_finished']:
-            folder = self.core.config['general']['download_folder']
-            folder = save_join(folder, pypack.folder)
+    def pyload_start(self):
+        lock = self.get_config('lock')
+        for script in self.scripts['pyload_start']:
+            self.call(script, lock=lock)
 
-            self.callScript(script, pypack.name, folder, pypack.id)
 
-    def beforeReconnecting(self, ip):
+    def exit(self):
+        lock = self.get_config('lock')
+        for script in self.scripts['pyload_restart' if self.pyload.do_restart else 'pyload_stop']:
+            self.call(script, lock=True)
+
+
+    def before_reconnect(self, ip):
+        lock = self.get_config('lock')
         for script in self.scripts['before_reconnect']:
-            self.callScript(script, ip)
+            args = [ip]
+            self.call(script, args, lock)
+        self.info['oldip'] = ip
 
-    def afterReconnecting(self, ip):
+
+    def after_reconnect(self, ip):
+        lock = self.get_config('lock')
         for script in self.scripts['after_reconnect']:
-            self.callScript(script, ip)
+            args = [ip, self.info['oldip']]  #@TODO: Use built-in oldip in 0.4.10
+            self.call(script, args, lock)
 
-    def unrarFinished(self, folder, fname):
-        for script in self.scripts["unrar_finished"]:
-            self.callScript(script, folder, fname)
 
-    def allDownloadsFinished(self):
-        for script in self.scripts["all_dls_finished"]:
-            self.callScript(script)
+    def download_preparing(self, pyfile):
+        lock = self.get_config('lock')
+        for script in self.scripts['download_preparing']:
+            args = [pyfile.id, pyfile.name, None, pyfile.pluginname, pyfile.url]
+            self.call(script, args, lock)
 
-    def allDownloadsProcessed(self):
-        for script in self.scripts["all_dls_processed"]:
-            self.callScript(script)
 
+    def download_failed(self, pyfile):
+        lock = self.get_config('lock')
+
+        if self.pyload.config.get("general", "folder_per_package"):
+            download_folder = fs_join(self.pyload.config.get("general", "download_folder"), pyfile.package().folder)
+        else:
+            download_folder = self.pyload.config.get("general", "download_folder")
+
+        for script in self.scripts['download_failed']:
+            file = fs_join(download_folder, pyfile.name)
+            args = [script, pyfile.id, pyfile.name, file, pyfile.pluginname, pyfile.url]
+            self.call(script, args, lock)
+
+
+    def download_finished(self, pyfile):
+        lock = self.get_config('lock')
+
+        if self.pyload.config.get("general", "folder_per_package"):
+            download_folder = fs_join(self.pyload.config.get("general", "download_folder"), pyfile.package().folder)
+        else:
+            download_folder = self.pyload.config.get("general", "download_folder")
+
+        for script in self.scripts['download_finished']:
+            file = fs_join(download_folder, pyfile.name)
+            args = [pyfile.id, pyfile.name, file, pyfile.pluginname, pyfile.url]
+            self.call(script, args, lock)
+
+
+    def archive_extract_failed(self, pyfile, archive):
+        lock = self.get_config('lock')
+        for script in self.scripts['archive_extract_failed']:
+            args = [pyfile.id, pyfile.name, archive.filename, archive.out, archive.files]
+            self.call(script, args, lock)
+
+
+    def archive_extracted(self, pyfile, archive):
+        lock = self.get_config('lock')
+        for script in self.scripts['archive_extracted']:
+            args = [script, pyfile.id, pyfile.name, archive.filename, archive.out, archive.files]
+            self.call(script, args, lock)
+
+
+    def package_finished(self, pypack):
+        lock = self.get_config('lock')
+
+        if self.pyload.config.get("general", "folder_per_package"):
+            download_folder = fs_join(self.pyload.config.get("general", "download_folder"), pypack.folder)
+        else:
+            download_folder = self.pyload.config.get("general", "download_folder")
+
+        for script in self.scripts['package_finished']:
+            args = [pypack.id, pypack.name, download_folder, pypack.password]
+            self.call(script, args, lock)
+
+
+    def package_deleted(self, pid):
+        lock = self.get_config('lock')
+        pack = self.pyload.api.getPackageInfo(pid)
+
+        if self.pyload.config.get("general", "folder_per_package"):
+            download_folder = fs_join(self.pyload.config.get("general", "download_folder"), pack.folder)
+        else:
+            download_folder = self.pyload.config.get("general", "download_folder")
+
+        for script in self.scripts['package_deleted']:
+            args = [pack.id, pack.name, download_folder, pack.password]
+            self.call(script, args, lock)
+
+
+    def package_extract_failed(self, pypack):
+        lock = self.get_config('lock')
+
+        if self.pyload.config.get("general", "folder_per_package"):
+            download_folder = fs_join(self.pyload.config.get("general", "download_folder"), pypack.folder)
+        else:
+            download_folder = self.pyload.config.get("general", "download_folder")
+
+        for script in self.scripts['package_extract_failed']:
+            args = [pypack.id, pypack.name, download_folder, pypack.password]
+            self.call(script, args, lock)
+
+
+    def package_extracted(self, pypack):
+        lock = self.get_config('lock')
+
+        if self.pyload.config.get("general", "folder_per_package"):
+            download_folder = fs_join(self.pyload.config.get("general", "download_folder"), pypack.folder)
+        else:
+            download_folder = self.pyload.config.get("general", "download_folder")
+
+        for script in self.scripts['package_extracted']:
+            args = [pypack.id, pypack.name, download_folder]
+            self.call(script, args, lock)
+
+
+    def all_downloads_finished(self):
+        lock = self.get_config('lock')
+        for script in self.scripts['all_downloads_finished']:
+            self.call(script, lock=lock)
+
+
+    def all_downloads_processed(self):
+        lock = self.get_config('lock')
+        for script in self.scripts['all_downloads_processed']:
+            self.call(script, lock=lock)
+
+
+    def all_archives_extracted(self):
+        lock = self.get_config('lock')
+        for script in self.scripts['all_archives_extracted']:
+            self.call(script, lock=lock)
+
+
+    def all_archives_processed(self):
+        lock = self.get_config('lock')
+        for script in self.scripts['all_archives_processed']:
+            self.call(script, lock=lock)

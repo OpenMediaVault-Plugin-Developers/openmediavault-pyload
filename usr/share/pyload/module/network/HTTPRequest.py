@@ -31,6 +31,7 @@ def myquote(url):
     return quote(url.encode('utf_8') if isinstance(url, unicode) else url, safe="%/:=&?~#+!$,;'@()*[]")
     
 def myurlencode(data):
+    data = dict(data)
     return urlencode(dict((x.encode('utf_8') if isinstance(x, unicode) else x, \
         y.encode('utf_8') if isinstance(y, unicode) else y ) for x, y in data.iteritems()))
 
@@ -166,7 +167,7 @@ class HTTPRequest():
 
                 self.c.setopt(pycurl.POSTFIELDS, post)
             else:
-                post = [(x, str(quote(y)) if type(y) in (str, unicode) else y ) for x, y in post.iteritems()]
+                post = [(x, y.encode('utf8') if type(y) == unicode else y ) for x, y in post.iteritems()]
                 self.c.setopt(pycurl.HTTPPOST, post)
         else:
             self.c.setopt(pycurl.POST, 0)

@@ -1,82 +1,85 @@
 # -*- coding: utf-8 -*-
 
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
+import time
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
+from module.plugins.internal.Addon import Addon
 
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-    
-    @author: mkaay
-"""
 
-from module.plugins.Hook import Hook
-from time import time
+class MultiHome(Addon):
+    __name__    = "MultiHome"
+    __type__    = "hook"
+    __version__ = "0.14"
+    __status__  = "testing"
 
-class MultiHome(Hook):
-    __name__ = "MultiHome"
-    __version__ = "0.1"
-    __description__ = """ip address changer"""
-    __config__ = [ ("activated", "bool", "Activated" , "False"),
-                   ("interfaces", "str", "Interfaces" , "None") ]
-    __author_name__ = ("mkaay")
-    __author_mail__ = ("mkaay@mkaay.de")
-    
-    def setup(self):
-        self.register = {}
+    __config__ = [("interfaces", "str", "Interfaces", "None")]
+
+    __description__ = """IP address changer"""
+    __license__     = "GPLv3"
+    __authors__     = [("mkaay", "mkaay@mkaay.de")]
+
+
+    def init(self):
+        self.register   = {}
         self.interfaces = []
-        self.parseInterfaces(self.getConfig("interfaces").split(";"))
+
+        self.parse_interfaces(self.get_config('interfaces').split(";"))
+
         if not self.interfaces:
-            self.parseInterfaces([self.config["download"]["interface"]])
-            self.setConfig("interfaces", self.toConfig())
-    
-    def toConfig(self):
-        return ";".join([i.adress for i in self.interfaces])
-    
-    def parseInterfaces(self, interfaces):
+            self.parse_interfaces([self.pyload.config.get("download", "interface")])
+            self.set_config("interfaces", self.to_config())
+
+
+    def to_config(self):
+        return ";".join(i.adress for i in self.interfaces)
+
+
+    def parse_interfaces(self, interfaces):
         for interface in interfaces:
             if not interface or str(interface).lower() == "none":
                 continue
             self.interfaces.append(Interface(interface))
-    
-    def coreReady(self):
-        requestFactory = self.core.requestFactory
+
+
+    def activate(self):
+        requestFactory = self.pyload.requestFactory
         oldGetRequest = requestFactory.getRequest
-        def getRequest(pluginName, account=None):
-            iface = self.bestInterface(pluginName, account)
+
+
+        def get_request(pluginName, account=None):
+            iface = self.best_interface(pluginName, account)
             if iface:
                 iface.useFor(pluginName, account)
                 requestFactory.iface = lambda: iface.adress
-                self.log.debug("Multihome: using address: "+iface.adress)
+                self.log_debug("Using address", iface.adress)
             return oldGetRequest(pluginName, account)
-        requestFactory.getRequest = getRequest
-    
-    def bestInterface(self, pluginName, account):
+
+        requestFactory.getRequest = get_request
+
+
+    def best_interface(self, pluginName, account):
         best = None
         for interface in self.interfaces:
             if not best or interface.lastPluginAccess(pluginName, account) < best.lastPluginAccess(pluginName, account):
                 best = interface
         return best
 
+
 class Interface(object):
+
     def __init__(self, adress):
         self.adress = adress
         self.history = {}
-    
-    def lastPluginAccess(self, pluginName, account):
+
+
+    def last_plugin_access(self, pluginName, account):
         if (pluginName, account) in self.history:
             return self.history[(pluginName, account)]
         return 0
-    
-    def useFor(self, pluginName, account):
-        self.history[(pluginName, account)] = time()
-    
+
+
+    def use_for(self, pluginName, account):
+        self.history[(pluginName, account)] = time.time()
+
+
     def __repr__(self):
         return "<Interface - %s>" % self.adress

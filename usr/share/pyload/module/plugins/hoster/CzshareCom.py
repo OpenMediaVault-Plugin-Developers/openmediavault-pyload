@@ -1,166 +1,163 @@
 # -*- coding: utf-8 -*-
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-
-    @author: zoidberg
-"""
+#
+# Test links:
+# http://czshare.com/5278880/random.bin
 
 import re
-from module.plugins.internal.SimpleHoster import SimpleHoster, parseFileInfo
-from module.network.RequestFactory import getURL
 
-def toInfoPage(url):
-    if r"/download.php?" in url:
-        try:
-            id = re.search(r"id=(\d+)", url).group(1)
-            code = re.search(r"code=(\w+)", url).group(1)
-        except Exception, e:
-            return None
-        return "http://czshare.com/%s/%s/" % (id, code)
-    return url
+from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+from module.utils import parseFileSize as parse_size
 
-def getInfo(urls):
-    result = []
-
-    for url in urls:
-        info_url = toInfoPage(url)
-        if info_url:
-            file_info = parseFileInfo(CzshareCom, url, getURL(info_url, decode=True)) 
-            result.append(file_info)
-            
-    yield result
 
 class CzshareCom(SimpleHoster):
-    __name__ = "CzshareCom"
-    __type__ = "hoster"
-    __pattern__ = r"http://(\w*\.)*czshare\.(com|cz)/(\d+/|download.php\?).*"
-    __version__ = "0.86"
-    __description__ = """CZshare.com"""
-    __author_name__ = ("zoidberg")
+    __name__    = "CzshareCom"
+    __type__    = "hoster"
+    __version__ = "1.02"
+    __status__  = "testing"
 
-    FILE_NAME_PATTERN = r'<div class="tab" id="parameters">\s*<p>\s*Cel. n.zev: <a href=[^>]*>(?P<N>[^<]+)</a>'
-    FILE_SIZE_PATTERN = r'<div class="tab" id="category">(?:\s*<p>[^\n]*</p>)*\s*Velikost:\s*(?P<S>[0-9., ]+)(?P<U>[kKMG])i?B\s*</div>'
-    FILE_OFFLINE_PATTERN = r'<div class="header clearfix">\s*<h2 class="red">'
-    FILE_SIZE_REPLACEMENTS = [(' ', '')]
+    __pattern__ = r'http://(?:www\.)?(czshare|sdilej)\.(com|cz)/(\d+/|download\.php\?).+'
+    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
 
-    FREE_URL_PATTERN = r'<a href="([^"]+)" class="page-download">[^>]*alt="([^"]+)" /></a>'
-    FREE_FORM_PATTERN = r'<form action="download.php" method="post">\s*<img src="captcha.php" id="captcha" />(.*?)</form>'
-    PREMIUM_FORM_PATTERN = r'<form action="/profi_down.php" method="post">(.*?)</form>'
-    FORM_INPUT_PATTERN = r'<input[^>]* name="([^"]+)" value="([^"]+)"[^>]*/>'
-    MULTIDL_PATTERN = r"<p><font color='red'>Z[^<]*PROFI.</font></p>"
-    USER_CREDIT_PATTERN = r'<div class="credit">\s*kredit: <strong>([0-9., ]+)([kKMG]i?B)</strong>\s*</div><!-- .credit -->'
+    __description__ = """CZshare.com hoster plugin, now Sdilej.cz"""
+    __license__     = "GPLv3"
+    __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
 
-    def setup(self):
-        self.resumeDownload = self.multiDL = True if self.premium else False
-        self.chunkLimit = 1
 
-    def process(self, pyfile):
-        url = toInfoPage(pyfile.url)
-        if not url:
-            self.logError(e)
-            self.fail("Invalid URL")
+    NAME_PATTERN    = r'<div class="tab" id="parameters">\s*<p>\s*Cel. n.zev: <a href=.*?>(?P<N>[^<]+)</a>'
+    SIZE_PATTERN    = r'<div class="tab" id="category">(?:\s*<p>[^\n]*</p>)*\s*Velikost:\s*(?P<S>[\d .,]+)(?P<U>[\w^_]+)\s*</div>'
+    OFFLINE_PATTERN = r'<div class="header clearfix">\s*<h2 class="red">'
 
-        self.html = self.load(url, cookies=True, decode=True)
-        self.getFileInfo()
+    SIZE_REPLACEMENTS = [(' ', '')]
+    URL_REPLACEMENTS  = [(r'http://[^/]*/download.php\?.*?id=(\w+).*', r'http://sdilej.cz/\1/x/')]
 
-        if not self.account or not self.handlePremium():
-            self.handleFree()
-        self.checkDownloadedFile()
+    CHECK_TRAFFIC = True
 
-    def handlePremium(self):
-        # check if user logged in
-        found = re.search(self.USER_CREDIT_PATTERN, self.html)
-        if not found:
+    FREE_URL_PATTERN     = r'<a href="(.+?)" class="page-download">[^>]*alt="(.+?)" /></a>'
+    FREE_FORM_PATTERN    = r'<form action="download\.php" method="post">\s*<img src="captcha\.php" id="captcha" />(.*?)</form>'
+    PREMIUM_FORM_PATTERN = r'<form action="/profi_down\.php" method="post">(.*?)</form>'
+    FORM_INPUT_PATTERN   = r'<input[^>]* name="(.+?)" value="(.+?)"[^>]*/>'
+    MULTIDL_PATTERN      = r'<p><font color=\'red\'>Z[^<]*PROFI.</font></p>'
+    USER_CREDIT_PATTERN  = r'<div class="credit">\s*kredit: <strong>([\d .,]+)(\w+)</strong>\s*</div><!-- .credit -->'
+
+
+    def check_traffic_left(self):
+        #: Check if user logged in
+        m = re.search(self.USER_CREDIT_PATTERN, self.html)
+        if m is None:
             self.account.relogin(self.user)
-            self.html = self.load(self.pyfile.url, cookies=True, decode=True)
-            found = re.search(self.USER_CREDIT_PATTERN, self.html)
-            if not found: return False
+            self.html = self.load(self.pyfile.url)
+            m = re.search(self.USER_CREDIT_PATTERN, self.html)
+            if m is None:
+                return False
 
-        # check user credit
+        #: Check user credit
         try:
-            credit = float(found.group(1).replace(',','.').replace(' ',''))
-            credit = credit * 1024 ** {'KB': 0, 'MB': 1, 'GB': 2}[found.group(2)]
-            self.logInfo("Premium download for %i KiB of Credit" % (self.pyfile.size / 1024))
-            self.logInfo("User %s has %i KiB left" % (self.user, credit))
-            if credit * 1024 < self.pyfile.size:
-                self.logInfo("Not enough credit to download file %s" % self.pyfile.name)
-                self.resetAccount()
+            credit = parse_size(m.group(1).replace(' ', ''), m.group(2))
+            self.log_info(_("Premium download for %i KiB of Credit") % (self.pyfile.size / 1024))
+            self.log_info(_("User %s has %i KiB left") % (self.user, credit / 1024))
+            if credit < self.pyfile.size:
+                self.log_info(_("Not enough credit to download file: %s") % self.pyfile.name)
+                return False
         except Exception, e:
-            # let's continue and see what happens...
-            self.logError('Parse error (CREDIT): %s' % e)
+            #: let's continue and see what happens...
+            self.log_error(e)
 
-        # parse download link
-        try:
-            form = re.search(self.PREMIUM_FORM_PATTERN, self.html, re.DOTALL).group(1)
-            inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
-        except Exception, e:
-            self.logError("Parse error (FORM): %s" % e)
-            self.resetAccount()
-
-        # download the file, destination is determined by pyLoad
-        self.download("http://czshare.com/profi_down.php", cookies=True, post=inputs)
         return True
 
-    def handleFree(self):
-        # get free url
-        found = re.search(self.FREE_URL_PATTERN, self.html)
-        if found is None:
-           raise PluginParseError('Free URL')
-        parsed_url = "http://czshare.com" + found.group(1)
-        self.logDebug("PARSED_URL:" + parsed_url)
 
-        # get download ticket and parse html
-        self.html = self.load(parsed_url, cookies=True)
+    def handle_premium(self, pyfile):
+    #: Parse download link
+        try:
+            form = re.search(self.PREMIUM_FORM_PATTERN, self.html, re.S).group(1)
+            inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
+        except Exception, e:
+            self.log_error(e)
+            self.restart(nopremium=True)
 
-        #if not re.search(self.FREE_FORM_PATTERN, self.html):
+        #: Download the file, destination is determined by pyLoad
+        self.download("http://sdilej.cz/profi_down.php", post=inputs, disposition=True)
+
+
+    def handle_free(self, pyfile):
+        #: Get free url
+        m = re.search(self.FREE_URL_PATTERN, self.html)
+        if m is None:
+            self.error(_("FREE_URL_PATTERN not found"))
+
+        parsed_url = "http://sdilej.cz" + m.group(1)
+
+        self.log_debug("PARSED_URL:" + parsed_url)
+
+        #: Get download ticket and parse html
+        self.html = self.load(parsed_url)
         if re.search(self.MULTIDL_PATTERN, self.html):
-           self.waitForFreeSlot()
+            self.wait(5 * 60, 12, _("Download limit reached"))
 
         try:
-            form = re.search(self.FREE_FORM_PATTERN, self.html, re.DOTALL).group(1)
+            form = re.search(self.FREE_FORM_PATTERN, self.html, re.S).group(1)
             inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
-            self.pyfile.size = int(inputs['size'])
+            pyfile.size = int(inputs['size'])
+
         except Exception, e:
-            self.logError(e)
-            raise PluginParseError('Form')
+            self.log_error(e)
+            self.error(_("Form"))
 
-        # get and decrypt captcha
-        captcha_url = 'http://czshare.com/captcha.php'
-        inputs['captchastring2'] = self.decryptCaptcha(captcha_url)
-        self.logDebug('CAPTCHA_URL:' + captcha_url + ' CAPTCHA:' + inputs['captchastring2'])
+        #: Get and decrypt captcha
+        captcha_url = 'http://sdilej.cz/captcha.php'
+        for _i in xrange(5):
+            inputs['captchastring2'] = self.captcha.decrypt(captcha_url)
+            self.html = self.load(parsed_url, post=inputs)
 
-        # download the file, destination is determined by pyLoad
-        self.download(parsed_url, cookies=True, post=inputs)
+            if u"<li>Zadaný ověřovací kód nesouhlasí!</li>" in self.html:
+                self.captcha.invalid()
+
+            elif re.search(self.MULTIDL_PATTERN, self.html):
+                self.wait(5 * 60, 12, _("Download limit reached"))
+
+            else:
+                self.captcha.correct()
+                break
+        else:
+            self.fail(_("No valid captcha code entered"))
+
+        m = re.search("countdown_number = (\d+);", self.html)
+        self.set_wait(int(m.group(1)) if m else 50)
+
+        #: Download the file, destination is determined by pyLoad
+        self.log_debug("WAIT URL", self.req.lastEffectiveURL)
+
+        m = re.search("free_wait.php\?server=(.*?)&(.*)", self.req.lastEffectiveURL)
+        if m is None:
+            self.error(_("Download URL not found"))
+
+        self.link = "http://%s/download.php?%s" % (m.group(1), m.group(2))
+
+        self.wait()
 
 
-    def checkDownloadedFile(self):
-        # check download
-        check = self.checkDownload({
-            "tempoffline": re.compile(r"^Soubor je do.asn. nedostupn.$"),
-            "multi_dl": re.compile(self.MULTIDL_PATTERN),
-            "captcha_err": re.compile(self.FREE_FORM_PATTERN)
-            })
+    def check_file(self):
+        #: Check download
+        check = self.check_download({
+            "temp offline" : re.compile(r"^Soubor je do.*asn.* nedostupn.*$"),
+            'credit'       : re.compile(r"^Nem.*te dostate.*n.* kredit.$"),
+            "multi-dl"     : re.compile(self.MULTIDL_PATTERN),
+            'captcha'      : "<li>Zadaný ověřovací kód nesouhlasí!</li>"
+        })
 
-        if check == "tempoffline":
-            self.fail("File not available - try later")
-        elif check == "multi_dl":
-            self.waitForFreeSlot()
-        elif check == "captcha_err":
-            self.invalidCaptcha()
+        if check == "temp offline":
+            self.fail(_("File not available - try later"))
+
+        elif check == "credit":
+            self.restart(nopremium=True)
+
+        elif check == "multi-dl":
+            self.wait(5 * 60, 12, _("Download limit reached"))
+
+        elif check == "captcha":
+            self.captcha.invalid()
             self.retry()
 
-    def waitForFreeSlot(self):
-        self.setWait(900, True)
-        self.wait()
-        self.retry()
+        return super(CzshareCom, self).check_file()
+
+
+getInfo = create_getInfo(CzshareCom)

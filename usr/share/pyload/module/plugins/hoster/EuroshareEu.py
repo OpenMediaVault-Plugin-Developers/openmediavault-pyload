@@ -1,70 +1,62 @@
 # -*- coding: utf-8 -*-
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-
-    @author: zoidberg
-"""
 
 import re
-from module.plugins.Hoster import Hoster
-from module.network.RequestFactory import getURL
 
-def getInfo(urls):
-    result = []
+from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 
-    for url in urls:
 
-        html = getURL(url, decode=True)
-        if re.search(EuroshareEu.FILE_OFFLINE_PATTERN, html):
-            # File offline
-            result.append((url, 0, 1, url))
-        else:
-            result.append((url, 0, 2, url))
-    yield result
+class EuroshareEu(SimpleHoster):
+    __name__    = "EuroshareEu"
+    __type__    = "hoster"
+    __version__ = "0.30"
+    __status__  = "testing"
 
-class EuroshareEu(Hoster):
-    __name__ = "EuroshareEu"
-    __type__ = "hoster"
-    __pattern__ = r"http://(\w*\.)?euroshare.eu/file/.*"
-    __version__ = "0.2b"
-    __description__ = """Euroshare.eu"""
-    __author_name__ = ("zoidberg")
+    __pattern__ = r'http://(?:www\.)?euroshare\.(eu|sk|cz|hu|pl)/file/.+'
+    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
 
-    URL_PATTERN = r'<a class="free" href="([^"]+)"></a>'
-    FILE_OFFLINE_PATTERN = r'<h2>S.bor sa nena.iel</h2>'
-    ERR_PARDL_PATTERN = r'<h2>Prebieha s.ahovanie</h2>'
+    __description__ = """Euroshare.eu hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
 
-    def setup(self):
-        self.multiDL = False
 
-    def process(self, pyfile):
-        self.html = self.load(pyfile.url, decode=True)
+    INFO_PATTERN    = r'<span style="float: left;"><strong>(?P<N>.+?)</strong> \((?P<S>.+?)\)</span>'
+    OFFLINE_PATTERN = ur'<h2>S.bor sa nena.iel</h2>|Požadovaná stránka neexistuje!'
 
-        if re.search(self.FILE_OFFLINE_PATTERN, self.html) is not None:
-            self.offline()
+    LINK_FREE_PATTERN = r'<a href="(/file/\d+/[^/]*/download/)"><div class="downloadButton"'
 
-        if re.search(self.ERR_PARDL_PATTERN, self.html) is not None:
-            self.waitForFreeSlot()
+    DL_LIMIT_PATTERN = r'<h2>Prebieha s.ahovanie</h2>|<p>Naraz je z jednej IP adresy mo.n. s.ahova. iba jeden s.bor'
+    ERROR_PATTERN    = r'href="/customer-zone/login/"'
 
-        found = re.search(self.URL_PATTERN, self.html)
-        if found is None:
-            self.fail("Parse error (URL)")
-        parsed_url = found.group(1)
+    URL_REPLACEMENTS = [(r"(http://[^/]*\.)(sk|cz|hu|pl)/", r"\1eu/")]
 
-        self.download(parsed_url, disposition=True)
 
-    def waitForFreeSlot(self):
-        self.setWait(300, True)
-        self.wait()
-        self.retry()
+    def handle_premium(self, pyfile):
+        if self.ERROR_PATTERN in self.html:
+            self.account.relogin(self.user)
+            self.retry(reason=_("User not logged in"))
+
+        self.link = pyfile.url.rstrip('/') + "/download/"
+
+        check = self.check_download({'login': re.compile(self.ERROR_PATTERN),
+                                    'json' : re.compile(r'\{"status":"error".*?"message":"(.*?)"')})
+
+        if check == "login" or (check == "json" and self.last_check.group(1) == "Access token expired"):
+            self.account.relogin(self.user)
+            self.retry(reason=_("Access token expired"))
+
+        elif check == "json":
+            self.fail(self.last_check.group(1))
+
+
+    def handle_free(self, pyfile):
+        if re.search(self.DL_LIMIT_PATTERN, self.html):
+            self.wait(5 * 60, 12, _("Download limit reached"))
+
+        m = re.search(self.LINK_FREE_PATTERN, self.html)
+        if m is None:
+            self.error(_("LINK_FREE_PATTERN not found"))
+
+        self.link = "http://euroshare.eu%s" % m.group(1)
+
+
+getInfo = create_getInfo(EuroshareEu)

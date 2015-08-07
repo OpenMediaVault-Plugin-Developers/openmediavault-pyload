@@ -1,38 +1,31 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from urllib import quote, unquote
-from module.plugins.Hoster import Hoster
+import urllib
 
-class RehostTo(Hoster):
-    __name__ = "RehostTo"
-    __version__ = "0.1"
-    __type__ = "hoster"
+from module.plugins.internal.MultiHoster import MultiHoster, create_getInfo
 
-    __pattern__ = r"https?://.*rehost.to\..*"
-    __description__ = """rehost.com hoster plugin"""
-    __author_name__ = ("RaNaN")
-    __author_mail__ = ("RaNaN@pyload.org")
 
-    def getFilename(self, url):
-        return unquote(url.rsplit("/", 1)[1])
+class RehostTo(MultiHoster):
+    __name__    = "RehostTo"
+    __type__    = "hoster"
+    __version__ = "0.23"
+    __status__  = "testing"
 
-    def setup(self):
-        self.chunkLimit = 3
-        self.resumeDownload = True
+    __pattern__ = r'https?://.*rehost\.to\..+'
+    __config__  = [("use_premium" , "bool", "Use premium account if available"    , True),
+                   ("revertfailed", "bool", "Revert to standard download if fails", True)]
 
-    def process(self, pyfile):
-        if not self.account:
-            self.log.error(_("Please enter your rehost.to account or deactivate this plugin"))
-            self.fail("No rehost.to account provided")
+    __description__ = """Rehost.com multi-hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("RaNaN", "RaNaN@pyload.org")]
 
-        data = self.account.getAccountInfo(self.user)
-        long_ses = data["long_ses"]
 
-        self.log.debug("Rehost.to: Old URL: %s" % pyfile.url)
-        new_url = "http://rehost.to/process_download.php?user=cookie&pass=%s&dl=%s" % (long_ses, quote(pyfile.url, ""))
+    def handle_premium(self, pyfile):
+        self.download("http://rehost.to/process_download.php",
+                      get={'user': "cookie",
+                           'pass': self.account.get_data(self.user)['session'],
+                           'dl'  : pyfile.url},
+                      disposition=True)
 
-        #raise timeout to 2min
-        self.req.setOption("timeout", 120)
 
-        self.download(new_url, disposition=True)
+getInfo = create_getInfo(RehostTo)

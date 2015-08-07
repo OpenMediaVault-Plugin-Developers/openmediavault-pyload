@@ -1,90 +1,133 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import re
 
-from module.utils import remove_chars
-from module.plugins.Hook import Hook
-
-class MultiHoster(Hook):
-    """
-    Generic MultiHoster plugin
-    """
-
-    interval = 0
-    hosters = []
-    replacements = []
-    supported = []
-
-    def getHosterCached(self):
-        if not self.hosters:
-
-            try:
-                self.hosters = self.getHoster()
-            except Exception, e:
-                self.logError("%s" % str(e))
-                return []
-
-            for rep in self.replacements:
-                if rep[0] in self.hosters:
-                    self.hosters.remove(rep[0])
-                    if rep[1] not in self.hosters:
-                        self.hosters.append(rep[1])
-
-        return self.hosters
+from module.plugins.internal.Plugin import Fail, encode
+from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo, replace_patterns, set_cookie, set_cookies
 
 
-    def getHoster(self):
-        """Load list of supported hoster
+class MultiHoster(SimpleHoster):
+    __name__    = "MultiHoster"
+    __type__    = "hoster"
+    __version__ = "0.50"
+    __status__  = "testing"
 
-        :return: List of domain names
-        """
-        raise NotImplementedError
+    __pattern__ = r'^unmatchable$'
+    __config__  = [("use_premium" , "bool", "Use premium account if available"    , True),
+                   ("revertfailed", "bool", "Revert to standard download if fails", True)]
 
-    def coreReady(self):
-        pluginMap = {}
-        for name in self.core.pluginManager.hosterPlugins.keys():
-            pluginMap[name.lower()] = name
+    __description__ = """Multi hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("Walter Purcaro", "vuolter@gmail.com")]
 
-        new_supported = []
 
-        for hoster in self.getHosterCached():
-            name = remove_chars(hoster.lower(), "-.")
+    HOSTER_NAME = None
 
-            if name in pluginMap:
-                self.supported.append(pluginMap[name])
+    LEECH_HOSTER  = False
+    LOGIN_ACCOUNT = True
+
+
+    def init(self):
+        self.HOSTER_NAME = self.pyload.pluginManager.hosterPlugins[self.__name__]['name']
+
+
+    def _log(self, level, plugintype, pluginname, messages):
+        return super(MultiHoster, self)._log(level,
+                                             plugintype,
+                                             pluginname,
+                                             (self.HOSTER_NAME,) + messages)
+
+
+    def setup(self):
+        self.chunk_limit     = 1
+        self.multiDL         = bool(self.account)
+        self.resume_download = self.premium
+
+
+    def prepare(self):
+        #@TODO: Recheck in 0.4.10
+        plugin = self.pyload.pluginManager.hosterPlugins[self.__name__]
+        name   = plugin['name']
+        module = plugin['module']
+        klass  = getattr(module, name)
+
+        self.get_info = klass.get_info
+
+        if self.DIRECT_LINK is None:
+            direct_dl = self.__pattern__ != r'^unmatchable$' and re.match(self.__pattern__, self.pyfile.url)
+        else:
+            direct_dl = self.DIRECT_LINK
+
+        super(MultiHoster, self).prepare()
+
+        self.direct_dl = direct_dl
+
+
+    def process(self, pyfile):
+        try:
+            self.prepare()
+            self.check_info()  #@TODO: Remove in 0.4.10
+
+            if self.direct_dl:
+                self.log_info(_("Looking for direct download link..."))
+                self.handle_direct(pyfile)
+
+                if self.link or was_downloaded():
+                    self.log_info(_("Direct download link detected"))
+                else:
+                    self.log_info(_("Direct download link not found"))
+
+            if not self.link and not self.last_download:
+                self.preload()
+
+                self.check_errors()
+                self.check_status(getinfo=False)
+
+                if self.premium and (not self.CHECK_TRAFFIC or self.check_traffic_left()):
+                    self.log_info(_("Processing as premium download..."))
+                    self.handle_premium(pyfile)
+
+                elif not self.LOGIN_ACCOUNT or (not self.CHECK_TRAFFIC or self.check_traffic_left()):
+                    self.log_info(_("Processing as free download..."))
+                    self.handle_free(pyfile)
+
+            if not self.last_download:
+                self.log_info(_("Downloading file..."))
+                self.download(self.link, disposition=self.DISPOSITION)
+
+            self.check_file()
+
+        except Fail, e:  #@TODO: Move to PluginThread in 0.4.10
+            if self.premium:
+                self.log_warning(_("Premium download failed"))
+                self.restart(nopremium=True)
+
+            elif self.get_config("revertfailed", True) \
+                 and "new_module" in self.pyload.pluginManager.hosterPlugins[self.__name__]:
+                hdict = self.pyload.pluginManager.hosterPlugins[self.__name__]
+
+                tmp_module = hdict['new_module']
+                tmp_name   = hdict['new_name']
+                hdict.pop('new_module', None)
+                hdict.pop('new_name', None)
+
+                pyfile.initPlugin()
+
+                hdict['new_module'] = tmp_module
+                hdict['new_name']   = tmp_name
+
+                self.restart(_("Revert to original hoster plugin"))
+
             else:
-                new_supported.append(hoster)
-
-        if not self.supported and not new_supported:
-            self.logError(_("No Hoster loaded"))
-            return
-
-        module = self.core.pluginManager.getPlugin(self.__name__)
-        klass = getattr(module, self.__name__)
-
-        # inject plugin plugin
-        self.logDebug("Overwritten Hosters: %s" % ", ".join(sorted(self.supported)))
-        for hoster in self.supported:
-            dict = self.core.pluginManager.hosterPlugins[hoster]
-            dict["new_module"] = module
-            dict["new_name"] = self.__name__
-
-        self.logDebug("New Hosters: %s" % ", ".join(sorted(new_supported)))
-
-        # create new regexp
-        regexp = r".*(%s).*" % "|".join([klass.__pattern__] + [x.replace(".", "\\.") for x in new_supported])
-
-        dict = self.core.pluginManager.hosterPlugins[self.__name__]
-        dict["pattern"] = regexp
-        dict["re"] = re.compile(regexp)
+                raise Fail(encode(e))  #@TODO: Remove `encode` in 0.4.10
 
 
-    def unload(self):
-        for hoster in self.supported:
-            dict = self.core.pluginManager.hosterPlugins[hoster]
-            if "module" in dict:
-                del dict["module"]
+    def handle_premium(self, pyfile):
+        return self.handle_free(pyfile)
 
-            del dict["new_module"]
-            del dict["new_name"]
+
+    def handle_free(self, pyfile):
+        if self.premium:
+            raise NotImplementedError
+        else:
+            self.fail(_("Required premium account not found"))

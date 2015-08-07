@@ -1,94 +1,79 @@
 # -*- coding: utf-8 -*-
 
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-    
-    @author: and9000
-"""
+from __future__ import with_statement
 
 import os
 import re
-import sys
 import traceback
 
-from os.path import join
-from module.utils import save_join, fs_encode
-from module.plugins.Hook import Hook
+from module.plugins.internal.Addon import Addon, threaded
+from module.utils import save_join as fs_join
 
-BUFFER_SIZE = 4096
 
-class MergeFiles(Hook):
-    __name__ = "MergeFiles"
-    __version__ = "0.1"
-    __description__ = "Merges parts splitted with hjsplit"
-    __config__ = [
-        ("activated" , "bool" , "Activated"  , "False"),
-        ]
-    __threaded__ = ["packageFinished"]
-    __author_name__ = ("and9000")
-    __author_mail__ = ("me@has-no-mail.com")
+class MergeFiles(Addon):
+    __name__    = "MergeFiles"
+    __type__    = "hook"
+    __version__ = "0.16"
+    __status__  = "testing"
 
-    def setup(self):
-        # nothing to do
-        pass
-        
-    def packageFinished(self, pack):
+    __config__ = [("activated", "bool", "Activated", True)]
+
+    __description__ = """Merges parts splitted with hjsplit"""
+    __license__     = "GPLv3"
+    __authors__     = [("and9000", "me@has-no-mail.com")]
+
+
+    BUFFER_SIZE = 4096
+
+
+    @threaded
+    def package_finished(self, pack):
         files = {}
         fid_dict = {}
-        for fid, data in pack.getChildren().iteritems():
-            if re.search("\.[0-9]{3}$", data["name"]):
-                if data["name"][:-4] not in files:
-                    files[data["name"][:-4]] = []
-                files[data["name"][:-4]].append(data["name"])
-                files[data["name"][:-4]].sort()
-                fid_dict[data["name"]] = fid
-                
-        download_folder = self.core.config['general']['download_folder']
-                
-        if self.core.config['general']['folder_per_package']:
-            download_folder = save_join(download_folder, pack.folder)
+        for fid, data in pack.getChildren().items():
+            if re.search("\.\d{3}$", data['name']):
+                if data['name'][:-4] not in files:
+                    files[data['name'][:-4]] = []
+                files[data['name'][:-4]].append(data['name'])
+                files[data['name'][:-4]].sort()
+                fid_dict[data['name']] = fid
 
-        for name, file_list in files.iteritems():
-            self.core.log.info("Starting merging of %s" % name)
-            final_file = open(join(download_folder, fs_encode(name)), "wb")
+        download_folder = self.pyload.config.get("general", "download_folder")
 
-            for splitted_file in file_list:
-                self.core.log.debug("Merging part %s" % splitted_file)
-                pyfile = self.core.files.getFile(fid_dict[splitted_file])
-                pyfile.setStatus("processing")
-                try:
-                    s_file = open(os.path.join(download_folder, splitted_file), "rb")
-                    size_written = 0
-                    s_file_size = int(os.path.getsize(os.path.join(download_folder, splitted_file)))
-                    while True:
-                        f_buffer = s_file.read(BUFFER_SIZE)
-                        if f_buffer:
-                            final_file.write(f_buffer)
-                            size_written += BUFFER_SIZE
-                            pyfile.setProgress((size_written*100)/s_file_size)
-                        else:
-                            break
-                    s_file.close()
-                    self.core.log.debug("Finished merging part %s" % splitted_file)
-                except Exception, e:
-                    print traceback.print_exc()
-                finally:
-                    pyfile.setProgress(100)
-                    pyfile.setStatus("finished")
-                    pyfile.release()
-                    
-            final_file.close()
-            self.core.log.info("Finished merging of %s" % name)
-                
+        if self.pyload.config.get("general", "folder_per_package"):
+            download_folder = fs_join(download_folder, pack.folder)
 
+        for name, file_list in files.items():
+            self.log_info(_("Starting merging of"), name)
+
+            with open(fs_join(download_folder, name), "wb") as final_file:
+                for splitted_file in file_list:
+                    self.log_debug("Merging part", splitted_file)
+
+                    pyfile = self.pyload.files.getFile(fid_dict[splitted_file])
+
+                    pyfile.setStatus("processing")
+
+                    try:
+                        with open(fs_join(download_folder, splitted_file), "rb") as s_file:
+                            size_written = 0
+                            s_file_size = int(os.path.getsize(os.path.join(download_folder, splitted_file)))
+                            while True:
+                                f_buffer = s_file.read(self.BUFFER_SIZE)
+                                if f_buffer:
+                                    final_file.write(f_buffer)
+                                    size_written += self.BUFFER_SIZE
+                                    pyfile.setProgress((size_written * 100) / s_file_size)
+                                else:
+                                    break
+                        self.log_debug("Finished merging part", splitted_file)
+
+                    except Exception, e:
+                        traceback.print_exc()
+
+                    finally:
+                        pyfile.setProgress(100)
+                        pyfile.setStatus("finished")
+                        pyfile.release()
+
+            self.log_info(_("Finished merging of"), name)

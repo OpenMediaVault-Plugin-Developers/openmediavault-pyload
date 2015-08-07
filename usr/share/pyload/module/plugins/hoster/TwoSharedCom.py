@@ -1,30 +1,34 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 import re
 
+from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+
+
 class TwoSharedCom(SimpleHoster):
-    __name__ = "TwoSharedCom"
-    __type__ = "hoster"
-    __pattern__ = r"http://[\w\.]*?2shared.com/(account/)?(download|get|file|document|photo|video|audio)/.*"
-    __version__ = "0.10"
-    __description__ = """2Shared Download Hoster"""
-    __author_name__ = ("zoidberg")
-    __author_mail__ = ("zoidberg@mujmail.cz")
+    __name__    = "TwoSharedCom"
+    __type__    = "hoster"
+    __version__ = "0.14"
+    __status__  = "testing"
 
-    FILE_NAME_PATTERN = r'<meta name="Description" content="(?P<N>.*) download free at 2shared'
-    FILE_SIZE_PATTERN = r'<span class="dtitle">File size:</span>\s*(?P<S>[0-9,.]+) (?P<U>[kKMG])i?B'
-    FILE_OFFLINE_PATTERN = r'The file link that you requested is not valid\.|This file was deleted\.'
-    DOWNLOAD_URL_PATTERN = r"window.location ='([^']+)';"
+    __pattern__ = r'http://(?:www\.)?2shared\.com/(account/)?(download|get|file|document|photo|video|audio)/.+'
+    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
 
-    def handleFree(self):               
-        found = re.search(self.DOWNLOAD_URL_PATTERN, self.html)
-        if not found: self.parseError('Download link')
-        link = found.group(1)
-        self.logDebug("Download URL %s" % link)
-        
-        self.download(link)
+    __description__ = """2Shared.com hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
+
+
+    NAME_PATTERN    = r'<h1>(?P<N>.*)</h1>'
+    SIZE_PATTERN    = r'<span class="dtitle">File size:</span>\s*(?P<S>[\d.,]+) (?P<U>[\w^_]+)'
+    OFFLINE_PATTERN = r'The file link that you requested is not valid\.|This file was deleted\.'
+
+    LINK_FREE_PATTERN = r'window.location =\'(.+?)\';'
+
+
+    def setup(self):
+        self.resume_download = True
+        self.multiDL        = True
+
 
 getInfo = create_getInfo(TwoSharedCom)
-            

@@ -1,51 +1,53 @@
 # -*- coding: utf-8 -*-
 
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-
-    @author: RaNaN
-"""
 import re
-from time import strptime, mktime
+import time
 
-from module.plugins.Account import Account
+from module.plugins.internal.Account import Account
+
 
 class FreakshareCom(Account):
-    __name__ = "FreakshareCom"
-    __version__ = "0.1"
-    __type__ = "account"
-    __description__ = """freakshare.com account plugin"""
-    __author_name__ = ("RaNaN")
-    __author_mail__ = ("RaNaN@pyload.org")
+    __name__    = "FreakshareCom"
+    __type__    = "account"
+    __version__ = "0.15"
+    __status__  = "testing"
 
-    def loadAccountInfo(self, user, req):
-        page = req.load("http://freakshare.com/")
+    __description__ = """Freakshare.com account plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("RaNaN", "RaNaN@pyload.org")]
 
-        validuntil = r"ltig bis:</td>\s*<td><b>([0-9 \-:.]+)</b></td>"
-        validuntil = re.search(validuntil, page, re.MULTILINE)
-        validuntil = validuntil.group(1).strip()
-        validuntil = mktime(strptime(validuntil, "%d.%m.%Y - %H:%M"))
 
-        traffic = r"Traffic verbleibend:</td>\s*<td>([^<]+)"
-        traffic = re.search(traffic, page, re.MULTILINE)
-        traffic = traffic.group(1).strip()
-        traffic = self.parseTraffic(traffic)
+    def parse_info(self, user, password, data, req):
+        premium = False
+        validuntil  = None
+        trafficleft = None
 
-        return {"validuntil": validuntil, "trafficleft": traffic}
+        html = self.load("http://freakshare.com/")
 
-    def login(self, user, data, req):
-        page = req.load("http://freakshare.com/login.html", None, { "submit" : "Login", "user" : user, "pass" : data['password']}, cookies=True)
+        try:
+            m = re.search(r'ltig bis:</td>\s*<td><b>([\d.:-]+)</b></td>', html, re.M)
+            validuntil = time.mktime(time.strptime(m.group(1).strip(), "%d.%m.%Y - %H:%M"))
 
-        if "Falsche Logindaten!" in page or "Wrong Username or Password!" in page:
-            self.wrongPassword()
+        except Exception:
+            pass
+
+        try:
+            m = re.search(r'Traffic verbleibend:</td>\s*<td>([^<]+)', html, re.M)
+            trafficleft = self.parse_traffic(m.group(1))
+
+        except Exception:
+            pass
+
+        return {'premium': premium, 'validuntil': validuntil, 'trafficleft': trafficleft}
+
+
+    def login(self, user, password, data, req):
+        self.load("http://freakshare.com/index.php?language=EN")
+
+        html = self.load("https://freakshare.com/login.html",
+                         post={'submit': "Login",
+                               'user'  : user,
+                               'pass'  : password})
+
+        if ">Wrong Username or Password" in html:
+            self.login_fail()

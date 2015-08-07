@@ -1,49 +1,73 @@
 # -*- coding: utf-8 -*-
 
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
+from __future__ import with_statement
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-    
-    @author: RaNaN
-"""
-
-import zipfile
+import os
 import sys
+import zipfile
 
-from module.plugins.internal.AbstractExtractor import AbtractExtractor
+from module.plugins.internal.Extractor import Extractor, ArchiveError, CRCError, PasswordError
+from module.utils import fs_encode
 
-class UnZip(AbtractExtractor):
-    __name__ = "UnZip"
-    __version__ = "0.1"
 
-    @staticmethod
-    def checkDeps():
+class UnZip(Extractor):
+    __name__    = "UnZip"
+    __version__ = "1.15"
+    __status__  = "testing"
+
+    __description__ = """Zip extractor plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("Walter Purcaro", "vuolter@gmail.com")]
+
+
+    VERSION    = "%s.%s.%s" % (sys.version_info[0], sys.version_info[1], sys.version_info[2])
+    EXTENSIONS = [".zip", ".zip64"]
+
+
+    @classmethod
+    def find(cls):
         return sys.version_info[:2] >= (2, 6)
 
-    @staticmethod
-    def getTargets(files_ids):
-        result = []
 
-        for file, id in files_ids:
-            if file.endswith(".zip"):
-                result.append((file, id))
+    def list(self, password=None):
+        with zipfile.ZipFile(fs_encode(self.filename), 'r', allowZip64=True) as z:
+            z.setpassword(password)
+            return z.namelist()
 
-        return result
 
-    def extract(self, progress, password=None):
-        z = zipfile.ZipFile(self.file)
-        self.files = z.namelist()
-        z.extractall(self.out)
+    def check(self, password):
+        pass
 
-    def getDeleteFiles(self):
-        return [self.file]
+
+    def verify(self):
+        with zipfile.ZipFile(fs_encode(self.filename), 'r', allowZip64=True) as z:
+            badfile = z.testzip()
+
+            if badfile:
+                raise CRCError(badfile)
+            else:
+                raise PasswordError
+
+
+    def extract(self, password=None):
+        try:
+            with zipfile.ZipFile(fs_encode(self.filename), 'r', allowZip64=True) as z:
+                z.setpassword(password)
+
+                badfile = z.testzip()
+
+                if badfile:
+                    raise CRCError(badfile)
+                else:
+                    z.extractall(self.out)
+
+        except (zipfile.BadZipfile, zipfile.LargeZipFile), e:
+            raise ArchiveError(e)
+
+        except RuntimeError, e:
+            if "encrypted" in e:
+                raise PasswordError
+            else:
+                raise ArchiveError(e)
+        else:
+            self.files = z.namelist()

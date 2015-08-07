@@ -1,58 +1,54 @@
 # -*- coding: utf-8 -*-
 
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-    
-    @author: zoidberg
-"""
-
-from module.plugins.Account import Account
-from time import mktime, strptime
-from string import replace
 import re
+import time
+
+from module.plugins.internal.Account import Account
+
 
 class CzshareCom(Account):
-    __name__ = "CzshareCom"
-    __version__ = "0.1"
-    __type__ = "account"
-    __description__ = """czshare.com account plugin"""
-    __author_name__ = ("zoidberg")
-    __author_mail__ = ("zoidberg@mujmail.cz")
-    
-    CREDIT_LEFT_PATTERN = r'<tr class="active">\s*<td>([0-9 ,]+) (KiB|MiB|GiB)</td>\s*<td>([^<]*)</td>\s*</tr>'
+    __name__    = "CzshareCom"
+    __type__    = "account"
+    __version__ = "0.20"
+    __status__  = "testing"
 
-    def loadAccountInfo(self, user, req):
-        self.relogin(user)
-        html = req.load("http://czshare.com/prehled_kreditu/")
-        
-        found = re.search(self.CREDIT_LEFT_PATTERN, html)
-        if found is None:
-            credits, validuntil = 0, 0
+    __description__ = """Czshare.com account plugin, now Sdilej.cz"""
+    __license__     = "GPLv3"
+    __authors__     = [("zoidberg", "zoidberg@mujmail.cz"),
+                       ("stickell", "l.stickell@yahoo.it")]
+
+
+    CREDIT_LEFT_PATTERN = r'<tr class="active">\s*<td>([\d ,]+) (KiB|MiB|GiB)</td>\s*<td>([^<]*)</td>\s*</tr>'
+
+
+    def parse_info(self, user, password, data, req):
+        premium     = False
+        validuntil  = None
+        trafficleft = None
+
+        html = self.load("http://sdilej.cz/prehled_kreditu/")
+
+        try:
+            m = re.search(self.CREDIT_LEFT_PATTERN, html)
+            trafficleft = self.parse_traffic(m.group(1).replace(' ', '').replace(',', '.')) + m.group(2)
+            validuntil  = time.mktime(time.strptime(m.group(3), '%d.%m.%y %H:%M'))
+
+        except Exception, e:
+            self.log_error(e)
+
         else:
-            credits = float(found.group(1).replace(' ', '').replace(',','.'))
-            credits = credits * 1024**{'KiB' : 0, 'MiB' : 1, 'GiB' : 2}[found.group(2)]
-            validuntil = mktime(strptime(found.group(3), '%d.%m.%y %H:%M'))
-        
-        return {"validuntil": validuntil, "trafficleft": credits}
-    
-    def login(self, user, data, req):
-    
-        html = req.load('http://czshare.com/index.php', post={
-                "Prihlasit": "Prihlasit",
-                "login-password": data["password"],
-                "login-name": user
-                })
-                
-        if "<p>You input a wrong user name or wrong password</p>" in html:
-            self.wrongPassword()
+            premium = True
+
+        return {'premium'    : premium,
+                'validuntil' : validuntil,
+                'trafficleft': trafficleft}
+
+
+    def login(self, user, password, data, req):
+        html = self.load('https://sdilej.cz/index.php',
+                         post={'Prihlasit'     : "Prihlasit",
+                               "login-password": password,
+                               "login-name"    : user})
+
+        if '<div class="login' in html:
+            self.login_fail()

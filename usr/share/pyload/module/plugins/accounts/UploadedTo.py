@@ -1,65 +1,75 @@
 # -*- coding: utf-8 -*-
 
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-    
-    @author: mkaay
-"""
-
-from module.plugins.Account import Account
 import re
-from time import time
+import time
+
+from module.plugins.internal.Account import Account
+
 
 class UploadedTo(Account):
-    __name__ = "UploadedTo"
-    __version__ = "0.21"
-    __type__ = "account"
-    __description__ = """ul.to account plugin"""
-    __author_name__ = ("mkaay")
-    __author_mail__ = ("mkaay@mkaay.de")
-    
-    def loadAccountInfo(self, user, req):
+    __name__    = "UploadedTo"
+    __type__    = "account"
+    __version__ = "0.35"
+    __status__  = "testing"
 
-        req.load("http://uploaded.to/language/en")
-        html = req.load("http://uploaded.to/me")
+    __description__ = """Uploaded.to account plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("Walter Purcaro", "vuolter@gmail.com")]
 
-        premium = '<a href="me#premium"><em>Premium</em>' in html or '<em>Premium</em></th>' in html
 
-        if premium:
-            raw_traffic = re.search(r'<th colspan="2"><b class="cB">([^<]+)', html).group(1)
-            raw_valid = re.search(r"<td>Duration:</td>\s*<th>([^<]+)", html, re.MULTILINE).group(1).strip()
+    COOKIES = False
 
-            traffic = int(self.parseTraffic(raw_traffic))
+    PREMIUM_PATTERN      = r'<em>Premium</em>'
+    VALID_UNTIL_PATTERN  = r'<td>Duration:</td>\s*<th>(.+?)<'
+    TRAFFIC_LEFT_PATTERN = r'<b class="cB">(?P<S>[\d.,]+) (?P<U>[\w^_]+)'
 
-            if raw_valid == "unlimited":
+
+    def parse_info(self, user, password, data, req):
+        validuntil  = None
+        trafficleft = None
+        premium     = None
+
+        html = self.load("http://uploaded.net/me")
+
+        premium = True if re.search(self.PREMIUM_PATTERN, html) else False
+
+        m = re.search(self.VALID_UNTIL_PATTERN, html, re.M)
+        if m:
+            expiredate = m.group(1).lower().strip()
+
+            if expiredate == "unlimited":
                 validuntil = -1
             else:
-                raw_valid = re.findall(r"(\d+) (weeks|days|hours)", raw_valid)
-                validuntil = time()
-                for n, u in raw_valid:
-                    validuntil += 3600 * int(n) * {"weeks": 168, "days": 24, "hours": 1}[u]
+                m = re.findall(r'(\d+) (week|day|hour)', expiredate)
+                if m:
+                    validuntil = time.time()
+                    for n, u in m:
+                        validuntil += float(n) * 60 * 60 * {'week': 168, 'day': 24, 'hour': 1}[u]
 
-            return {"validuntil":validuntil, "trafficleft":traffic, "maxtraffic":50*1024*1024}
-        else:
-            return {"premium" : False, "validuntil" : -1}
+        m = re.search(self.TRAFFIC_LEFT_PATTERN, html)
+        if m:
+            traffic = m.groupdict()
+            size    = traffic['S'].replace('.', '')
+            unit    = traffic['U'].lower()
 
-    def login(self, user, data, req):
+            if unit.startswith('t'):  #@NOTE: Remove in 0.4.10
+                trafficleft = float(size.replace(',', '.')) / 1024
+                trafficleft *= 1 << 40
+            else:
+                trafficleft = self.parse_traffic(size + unit)
 
-        req.load("http://uploaded.to/language/en")
-        req.cj.setCookie("uploaded.to", "lang", "en")
-        
-        page = req.load("http://uploaded.to/io/login", post={ "id" : user, "pw" : data["password"], "_" : ""})
+        return {'validuntil' : validuntil,
+                'trafficleft': trafficleft,
+                'premium'    : premium}
 
-        if "User and password do not match!" in page:
-            self.wrongPassword()
+
+    def login(self, user, password, data, req):
+        self.load("http://uploaded.net/language/en")
+
+        html = self.load("http://uploaded.net/io/login",
+                         post={'id': user,
+                               'pw': password})
+
+        m = re.search(r'"err":"(.+?)"', html)
+        if m is not None:
+            self.login_fail(m.group(1))

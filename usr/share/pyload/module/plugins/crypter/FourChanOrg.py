@@ -1,39 +1,29 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+#
+# Based on 4chandl by Roland Beermann (https://gist.github.com/enkore/3492599)
 
 import re
+import urlparse
 
-from module.plugins.Crypter import Crypter
+from module.plugins.internal.Crypter import Crypter
+
 
 class FourChanOrg(Crypter):
-    __name__ = "FourChanOrg"
-    __type__ = "container"
-    __pattern__ = r"http://(www\.)?(img\.)?(zip\.)?4chan.org/\w+/(res/|imgboard\.html)"
-    __version__ = "0.1"
-    __description__ = """4chan.org Thread Download Plugin"""
-    __author_name__ = ("Spoob")
-    __author_mail__ = ("Spoob@pyload.org")
+    __name__    = "FourChanOrg"
+    __type__    = "crypter"
+    __version__ = "0.33"
+    __status__  = "testing"
 
-    def __init__(self, parent):
-        Crypter.__init__(self, parent)
-        self.parent = parent
-        self.html = None
+    __pattern__ = r'http://(?:www\.)?boards\.4chan\.org/\w+/res/(\d+)'
+    __config__  = [("use_subfolder"     , "bool", "Save package to subfolder"          , True),
+                   ("subfolder_per_pack", "bool", "Create a subfolder for each package", True)]
 
-    def file_exists(self):
-        """ returns True or False
-        """
-        return True
+    __description__ = """4chan.org folder decrypter plugin"""
+    __license__     = "GPLv3"
+    __authors__     = []
 
-    def proceed(self, url, location):
-        url = self.parent.url
-        html = self.req.load(url)
-        link_pattern = ""
-        temp_links = []
-        if "imagebord.html" in url:
-            link_pattern = '[<a href="(res/\d*\.html)">Reply</a>]'
-            temp_links = re.findall(link_pattern, html)
-            for link in re.findall(link_pattern, html):
-                temp_links.append(link)
-        else:
-            temp_links = re.findall('File : <a href="(http://(?:img\.)?(?:zip\.)?4chan\.org/\w{,3}/src/\d*\..{3})"', html)
-        self.links = temp_links
+
+    def decrypt(self, pyfile):
+        pagehtml = self.load(pyfile.url)
+        images = set(re.findall(r'(images\.4chan\.org/[^/]*/src/[^"<]+)', pagehtml))
+        self.urls = [urlparse.urljoin("http://", image) for image in images]

@@ -1,85 +1,53 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import re
-from urllib import quote, unquote
-from random import randrange
+import time
+import urllib
 
-from module.plugins.Hoster import Hoster
-
-class RealdebridCom(Hoster):
-    __name__ = "RealdebridCom"
-    __version__ = "0.41"
-    __type__ = "hoster"
-
-    __pattern__ = r"https?://.*real-debrid\..*"
-    __description__ = """Real-Debrid.com hoster plugin"""
-    __author_name__ = ("Devirex, Hazzard")
-    __author_mail__ = ("naibaf_11@yahoo.de")
-
-    def getFilename(self, url):
-        try:
-            name = unquote(url.rsplit("/", 1)[1])
-        except IndexError:
-            name = "Unknown_Filename..."
-        if name.endswith("..."): #incomplete filename, append random stuff
-            name += "%s.tmp" % randrange(100,999)
-        return name
-
-    def init(self):
-        self.tries = 0
-        self.chunkLimit = 3
-        self.resumeDownload = True
+from module.common.json_layer import json_loads
+from module.plugins.internal.MultiHoster import MultiHoster, create_getInfo
+from module.utils import parseFileSize as parse_size
 
 
-    def process(self, pyfile):
-        if not self.account:
-            self.logError(_("Please enter your Real-debrid account or deactivate this plugin"))
-            self.fail("No Real-debrid account provided")
+class RealdebridCom(MultiHoster):
+    __name__    = "RealdebridCom"
+    __type__    = "hoster"
+    __version__ = "0.69"
+    __status__  = "testing"
 
-        self.log.debug("Real-Debrid: Old URL: %s" % pyfile.url)
-        if re.match(self.__pattern__, pyfile.url):
-            new_url = pyfile.url
-        else:
-            password = self.getPassword().splitlines()
-            if not password: password = ""
-            else: password = password[0]
-            
-            url = "http://real-debrid.com/ajax/deb.php?lang=en&sl=1&link=%s&passwort=%s" % (quote(pyfile.url, ""), password)
-            page = self.load(url)
+    __pattern__ = r'https?://((?:www\.|s\d+\.)?real-debrid\.com/dl/|[\w^_]\.rdb\.so/d/)[\w^_]+'
+    __config__  = [("use_premium" , "bool", "Use premium account if available"    , True),
+                   ("revertfailed", "bool", "Revert to standard download if fails", True)]
 
-            error = re.search(r'<span id="generation-error">(.*)</span>', page)
+    __description__ = """Real-Debrid.com multi-hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("Devirex Hazzard", "naibaf_11@yahoo.de")]
 
-            if error:
-                msg = error.group(1).strip()
-                self.logDebug(page)
-                if msg == "Your file is unavailable on the hoster.":
-                    self.offline()
-                else:
-                    self.fail(msg)
-            elif url == 'error':
-                self.fail("Your IP is most likely blocked. Please contact RealDebrid support")
+
+    def setup(self):
+        self.chunk_limit = 3
+
+
+    def handle_premium(self, pyfile):
+        data = json_loads(self.load("https://real-debrid.com/ajax/unrestrict.php",
+                                    get={'lang'    : "en",
+                                         'link'    : pyfile.url,
+                                         'password': self.get_password(),
+                                         'time'    : int(time.time() * 1000)}))
+
+        self.log_debug("Returned Data: %s" % data)
+
+        if data['error'] != 0:
+            if data['message'] == "Your file is unavailable on the hoster.":
+                self.offline()
             else:
-                new_url = page
-
-        if self.getConfig("https"):
-            new_url = new_url.replace("http://", "https://")
+                self.log_warning(data['message'])
+                self.temp_offline()
         else:
-            new_url = new_url.replace("https://", "http://")
+            if pyfile.name and pyfile.name.endswith('.tmp') and data['file_name']:
+                pyfile.name = data['file_name']
+            pyfile.size = parse_size(data['file_size'])
+            self.link = data['generated_links'][0][-1]
 
-        self.log.debug("Real-Debrid: New URL: %s" % new_url)
 
-
-        if pyfile.name.startswith("http") or pyfile.name.startswith("Unknown"):
-            #only use when name wasnt already set
-            pyfile.name = self.getFilename(new_url)
-
-        self.download(new_url, disposition=True)
-
-        check = self.checkDownload(
-                {"error": "<title>An error occured while processing your request</title>"})
-
-        if check == "error":
-            #usual this download can safely be retried
-            self.retry(reason="An error occured while generating link.", wait_time=60)
-
+getInfo = create_getInfo(RealdebridCom)

@@ -1,70 +1,69 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
-from module.plugins.ReCaptcha import ReCaptcha
 import re
+import urlparse
+
+from module.plugins.captcha.ReCaptcha import ReCaptcha
+from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+
 
 class CrockoCom(SimpleHoster):
-    __name__ = "CrockoCom"
-    __type__ = "hoster"
-    __pattern__ = r"http://(www\.)?(crocko|easy-share).com/.*"
-    __version__ = "0.11"
-    __description__ = """Crocko Download Hoster"""
-    __author_name__ = ("zoidberg")
-    __author_mail__ = ("zoidberg@mujmail.cz")
+    __name__    = "CrockoCom"
+    __type__    = "hoster"
+    __version__ = "0.21"
+    __status__  = "testing"
 
-    FILE_INFO_PATTERN = r'<strong>(?P<N>.*)\s*<span class="tip1"><span class="inner">(?P<S>[0-9,.]+) (?P<U>[kKMG])i?B</span></span>'
-    FILE_OFFLINE_PATTERN = r"<h1>Sorry,<br />the page you're looking for <br />isn't here.</h1>"
-    DOWNLOAD_URL_PATTERN = r"window.location ='([^']+)';"
-    CAPTCHA_URL_PATTERN = re.compile(r"u='(/file_contents/captcha/\w+)';\s*w='(\d+)';")
-    CAPTCHA_KEY_PATTERN = re.compile(r'Recaptcha.create\("([^"]+)"')
-    
-    FORM_PATTERN = r'<form  method="post" action="([^"]+)">(.*?)</form>'
-    FORM_INPUT_PATTERN = r'<input[^>]* name="?([^" ]+)"? value="?([^" ]+)"?[^>]*>'
-    
-    FILE_NAME_REPLACEMENTS = [(r'<[^>]*>', '')]
+    __pattern__ = r'http://(?:www\.)?(crocko|easy-share)\.com/\w+'
+    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
 
-    def handleFree(self):
+    __description__ = """Crocko hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
+
+
+    NAME_PATTERN    = r'<span class="fz24">Download:\s*<strong>(?P<N>.*)'
+    SIZE_PATTERN    = r'<span class="tip1"><span class="inner">(?P<S>[^<]+)</span></span>'
+    OFFLINE_PATTERN = r'<h1>Sorry,<br />the page you\'re looking for <br />isn\'t here.</h1>|File not found'
+
+    CAPTCHA_PATTERN = r"u='(/file_contents/captcha/\w+)';\s*w='(\d+)';"
+
+    FORM_PATTERN = r'<form  method="post" action="(.+?)">(.*?)</form>'
+    FORM_INPUT_PATTERN = r'<input[^>]* name="?([^" ]+)"? value="?([^" ]+)"?.*?>'
+
+    NAME_REPLACEMENTS = [(r'<.*?>', '')]
+
+
+    def handle_free(self, pyfile):
         if "You need Premium membership to download this file." in self.html:
-            self.fail("You need Premium membership to download this file.")
-    
-        url = False               
-        for i in range(5):
-            found = re.search(self.CAPTCHA_URL_PATTERN, self.html)
-            if found: 
-                url, wait_time = 'http://crocko.com' + found.group(1), found.group(2)
-                self.setWait(wait_time)
-                self.wait()
-                self.html = self.load(url)
-            else:     
-                break 
-                
-        found = re.search(self.CAPTCHA_KEY_PATTERN, self.html)
-        if not found: self.parseError('Captcha KEY')
-        captcha_key = found.group(1)
-        
-        found = re.search(self.FORM_PATTERN, self.html, re.DOTALL)
-        if not found: self.parseError('ACTION')
-        action, form = found.groups()
-        inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
-        
-        recaptcha = ReCaptcha(self)
-        
-        for i in range(5):
-            inputs['recaptcha_challenge_field'], inputs['recaptcha_response_field'] = recaptcha.challenge(captcha_key)
-            self.download(action, post = inputs)
-            
-            check = self.checkDownload({
-                "captcha_err": self.CAPTCHA_KEY_PATTERN
-                })
+            self.fail(_("You need Premium membership to download this file"))
 
-            if check == "captcha_err":
-                self.invalidCaptcha()
+        for _i in xrange(5):
+            m = re.search(self.CAPTCHA_PATTERN, self.html)
+            if m:
+                url = urlparse.urljoin("http://crocko.com", m.group(1))
+                self.wait(m.group(2))
+                self.html = self.load(url)
+            else:
+                break
+
+        m = re.search(self.FORM_PATTERN, self.html, re.S)
+        if m is None:
+            self.error(_("FORM_PATTERN not found"))
+
+        action, form = m.groups()
+        inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
+        recaptcha = ReCaptcha(self)
+
+        for _i in xrange(5):
+            inputs['recaptcha_response_field'], inputs['recaptcha_challenge_field'] = recaptcha.challenge()
+            self.download(action, post=inputs)
+
+            if self.check_download({'captcha': recaptcha.KEY_AJAX_PATTERN}):
+                self.captcha.invalid()
             else:
                 break
         else:
-            self.fail('No valid captcha solution received')
+            self.fail(_("No valid captcha solution received"))
+
 
 getInfo = create_getInfo(CrockoCom)
-            

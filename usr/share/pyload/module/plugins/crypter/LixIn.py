@@ -1,61 +1,64 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import re
+import urlparse
 
-from module.plugins.Crypter import Crypter
+from module.plugins.internal.Crypter import Crypter
+
 
 class LixIn(Crypter):
-    __name__ = "LixIn"
-    __type__ = "container"
-    __pattern__ = r"http://(www.)?lix.in/(?P<id>.*)"
-    __version__ = "0.2"
-    __description__ = """Lix.in Container Plugin"""
-    __author_name__ = ("spoob")
-    __author_mail__ = ("spoob@pyload.org")
-    
-    CAPTCHA_PATTERN='<img src="(?P<image>captcha_img.php\?PHPSESSID=.*?)"'
-    SUBMIT_PATTERN=r"value='continue .*?'"
-    LINK_PATTERN=r'name="ifram" src="(?P<link>.*?)"'
-    
+    __name__    = "LixIn"
+    __type__    = "crypter"
+    __version__ = "0.24"
+    __status__  = "testing"
+
+    __pattern__ = r'http://(?:www\.)?lix\.in/(?P<ID>.+)'
+    __config__  = [("use_subfolder"     , "bool", "Save package to subfolder"          , True),
+                   ("subfolder_per_pack", "bool", "Create a subfolder for each package", True)]
+
+    __description__ = """Lix.in decrypter plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("spoob", "spoob@pyload.org")]
+
+
+    CAPTCHA_PATTERN = r'<img src="(captcha_img\.php\?.*?)"'
+    SUBMIT_PATTERN = r'value=\'continue.*?\''
+    LINK_PATTERN = r'name="ifram" src="(.*?)"'
+
 
     def decrypt(self, pyfile):
         url = pyfile.url
-        
-        matches = re.search(self.__pattern__,url)
-        if not matches:
-            self.fail("couldn't identify file id")
-            
-        id = matches.group("id")
-        self.logDebug("File id is %s" % id)
-        
-        self.html = self.req.load(url, decode=True)
-        
-        matches = re.search(self.SUBMIT_PATTERN,self.html)
-        if not matches:
-	    self.fail("link doesn't seem valid")
 
-        matches = re.search(self.CAPTCHA_PATTERN, self.html)
-        if matches:
-            for i in range(5):
-                matches = re.search(self.CAPTCHA_PATTERN, self.html)
-                if matches:
-                    self.logDebug("trying captcha")
-                    captcharesult = self.decryptCaptcha("http://lix.in/"+matches.group("image"))
-	            self.html = self.req.load(url, decode=True, post={"capt" : captcharesult, "submit":"submit","tiny":id})
-	        else:
-	            self.logDebug("no captcha/captcha solved")
-	            break
-	else:
-            self.html = self.req.load(url, decode=True, post={"submit" : "submit",
-	                                                      "tiny"   : id})
-	                                     
-        matches = re.search(self.LINK_PATTERN, self.html)
-        if not matches:
-	    self.fail("can't find destination url")
+        m = re.match(self.__pattern__, url)
+        if m is None:
+            self.error(_("Unable to identify file ID"))
 
-        new_link = matches.group("link")
-        self.logDebug("Found link %s, adding to package" % new_link)
+        id = m.group('ID')
+        self.log_debug("File id is %s" % id)
 
-        self.packages.append((self.pyfile.package().name, [new_link], self.pyfile.package().name))
-           
+        self.html = self.load(url)
+
+        m = re.search(self.SUBMIT_PATTERN, self.html)
+        if m is None:
+            self.error(_("Link doesn't seem valid"))
+
+        m = re.search(self.CAPTCHA_PATTERN, self.html)
+        if m:
+            for _i in xrange(5):
+                m = re.search(self.CAPTCHA_PATTERN, self.html)
+                if m:
+                    self.log_debug("Trying captcha")
+                    captcharesult = self.captcha.decrypt(urlparse.urljoin("http://lix.in/", m.group(1)))
+                self.html = self.load(url,
+                                          post={'capt': captcharesult, 'submit': "submit", 'tiny': id})
+            else:
+                self.log_debug("No captcha/captcha solved")
+        else:
+            self.html = self.load(url, post={'submit': "submit", 'tiny': id})
+
+        m = re.search(self.LINK_PATTERN, self.html)
+        if m is None:
+            self.error(_("Unable to find destination url"))
+        else:
+            self.urls = [m.group(1)]
+            self.log_debug("Found link %s, adding to package" % self.urls[0])

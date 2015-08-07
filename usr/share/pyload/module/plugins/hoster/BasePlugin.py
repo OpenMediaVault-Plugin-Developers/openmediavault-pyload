@@ -1,89 +1,105 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from urlparse import urlparse
-from re import search
-from urllib import unquote
+
+import re
+import urllib
+import urlparse
 
 from module.network.HTTPRequest import BadHeader
-from module.plugins.Hoster import Hoster
-from module.utils import html_unescape, remove_chars
+from module.plugins.internal.SimpleHoster import create_getInfo
+from module.plugins.internal.Hoster import Hoster
+
 
 class BasePlugin(Hoster):
-    __name__ = "BasePlugin"
-    __type__ = "hoster"
-    __pattern__ = r"^unmatchable$"
-    __version__ = "0.14"
+    __name__    = "BasePlugin"
+    __type__    = "hoster"
+    __version__ = "0.45"
+    __status__  = "testing"
+
+    __pattern__ = r'^unmatchable$'
+
     __description__ = """Base Plugin when any other didnt fit"""
-    __author_name__ = ("RaNaN")
-    __author_mail__ = ("RaNaN@pyload.org")
+    __license__     = "GPLv3"
+    __authors__     = [("RaNaN", "RaNaN@pyload.org"),
+                       ("Walter Purcaro", "vuolter@gmail.com")]
+
+
+    @classmethod
+    def get_info(cls, url="", html=""):  #@TODO: Move to hoster class in 0.4.10
+        url   = urllib.unquote(url)
+        url_p = urlparse.urlparse(url)
+        return {'name'  : (url_p.path.split('/')[-1]
+                           or url_p.query.split('=', 1)[::-1][0].split('&', 1)[0]
+                           or url_p.netloc.split('.', 1)[0]),
+                'size'  : 0,
+                'status': 3 if url else 8,
+                'url'   : url}
+
 
     def setup(self):
-        self.chunkLimit = -1
-        self.resumeDownload = True
+        self.chunk_limit     = -1
+        self.multiDL        = True
+        self.resume_download = True
+
 
     def process(self, pyfile):
-        """main function"""
+        """
+        Main function
+        """
+        pyfile.name = self.get_info(pyfile.url)['name']
 
-        #debug part, for api exerciser
-        if pyfile.url.startswith("DEBUG_API"):
-            self.multiDL = False
+        if not pyfile.url.startswith("http"):
+            self.fail(_("No plugin matched"))
+
+        for _i in xrange(5):
+            try:
+                link = self.direct_link(urllib.unquote(pyfile.url))
+
+                if link:
+                    self.download(link, ref=False, disposition=True)
+                else:
+                    self.fail(_("File not found"))
+
+            except BadHeader, e:
+                if e.code == 404:
+                    self.offline()
+
+                elif e.code in (401, 403):
+                    self.log_debug("Auth required", "Received HTTP status code: %d" % e.code)
+
+                    account = self.pyload.accountManager.getAccountPlugin('Http')
+                    servers = [x['login'] for x in account.getAllAccounts()]  #@TODO: Recheck in 0.4.10
+                    server  = urlparse.urlparse(pyfile.url).netloc
+
+                    if server in servers:
+                        self.log_debug("Logging on to %s" % server)
+                        self.req.addAuth(account.get_info(server)['login']['password'])
+                    else:
+                        pwd = self.get_password()
+                        if ':' in pwd:
+                            self.req.addAuth(pwd)
+                        else:
+                            self.fail(_("Authorization required"))
+                else:
+                    self.fail(e)
+            else:
+                break
+        else:
+            self.fail(_("No file downloaded"))  #@TODO: Move to hoster class in 0.4.10
+
+        errmsg = self.check_download({'Empty file'   : re.compile(r'\A\s*\Z'),
+                                     'Html error'   : re.compile(r'\A(?:\s*<.+>)?((?:[\w\s]*(?:[Ee]rror|ERROR)\s*\:?)?\s*\d{3})(?:\Z|\s+)'),
+                                     'Html file'    : re.compile(r'\A\s*<!DOCTYPE html'),
+                                     'Request error': re.compile(r'([Aa]n error occured while processing your request)')})
+        if not errmsg:
             return
 
-#        self.__name__ = "NetloadIn"
-#        pyfile.name = "test"
-#        self.html = self.load("http://localhost:9000/short")
-#        self.download("http://localhost:9000/short")
-#        self.api = self.load("http://localhost:9000/short")
-#        self.decryptCaptcha("http://localhost:9000/captcha")
-#
-#        if pyfile.url == "79":
-#            self.core.api.addPackage("test", [str(i) for i in range(80)], 1)
-#
-#        return
-        if pyfile.url.startswith("http"):
+        try:
+            errmsg += " | " + self.last_check.group(1).strip()
+        except Exception:
+            pass
 
-            try:
-                self.downloadFile(pyfile)
-            except BadHeader, e:
-                if e.code in (401, 403):
-                    self.logDebug("Auth required")
-
-                    pwd = pyfile.package().password.strip()
-                    if ":" not in pwd:
-                        self.fail(_("Authorization required (username:password)"))
-
-                    self.req.addAuth(pwd)
-                    self.downloadFile(pyfile)
-                else:
-                    raise
-
-        else:
-            self.fail("No Plugin matched and not a downloadable url.")
+        self.log_warning(_("Check result: ") + errmsg, _("Waiting 1 minute and retry"))
+        self.retry(3, 60, errmsg)
 
 
-    def downloadFile(self, pyfile):
-        header = self.load(pyfile.url, just_header = True)
-        #self.logDebug(header)
-
-        if 'location' in header:
-            self.logDebug("Location: " + header['location'])
-            url = unquote(header['location'])
-        else:
-            url = pyfile.url
-
-        name = html_unescape(urlparse(url).path.split("/")[-1])
-
-        if 'content-disposition' in header:
-            self.logDebug("Content-Disposition: " + header['content-disposition'])
-            m = search("filename(?P<type>=|\*=(?P<enc>.+)'')(?P<name>.*)", header['content-disposition'])
-            if m:
-                disp = m.groupdict()
-                self.logDebug(disp)
-                if not disp['enc']: disp['enc'] = 'utf-8'
-                name = remove_chars(disp['name'], "\"';").strip()
-                name = unicode(unquote(name), disp['enc'])
-
-        if not name: name = url
-        pyfile.name = name
-        self.logDebug("Filename: %s" % pyfile.name)
-        self.download(url, disposition=True)
+getInfo = create_getInfo(BasePlugin)

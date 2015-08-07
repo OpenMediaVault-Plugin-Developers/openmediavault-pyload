@@ -1,81 +1,137 @@
 # -*- coding: utf-8 -*-
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-
-    @author: zoidberg
-"""
+#
+# API Documentation:
+# http://api.letitbit.net/reg/static/api.pdf
+#
+# Test links:
+# http://letitbit.net/download/07874.0b5709a7d3beee2408bb1f2eefce/random.bin.html
 
 import re
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+import urlparse
+
+from module.common.json_layer import json_loads, json_dumps
+from module.network.RequestFactory import getURL as get_url
+from module.plugins.captcha.ReCaptcha import ReCaptcha
+from module.plugins.internal.SimpleHoster import SimpleHoster, seconds_to_midnight
+
+
+def api_response(url):
+    json_data = ["yw7XQy2v9", ["download/info", {'link': url}]]
+    api_rep   = get_url("http://api.letitbit.net/json",
+                        post={'r': json_dumps(json_data)})
+    return json_loads(api_rep)
+
+
+def get_info(urls):
+    for url in urls:
+        api_rep = api_response(url)
+        if api_rep['status'] == "OK":
+            info = api_rep['data'][0]
+            yield (info['name'], info['size'], 2, url)
+        else:
+            yield (url, 0, 1, url)
+
 
 class LetitbitNet(SimpleHoster):
-    __name__ = "LetitbitNet"
-    __type__ = "hoster"
-    __pattern__ = r"http://(?:\w*\.)*letitbit.net/download/.*"
-    __version__ = "0.12"
-    __description__ = """letitbit.net"""
-    __author_name__ = ("zoidberg")
-    __author_mail__ = ("zoidberg@mujmail.cz")
+    __name__    = "LetitbitNet"
+    __type__    = "hoster"
+    __version__ = "0.32"
+    __status__  = "testing"
 
-    FORM_PATTERN = r'<form%s action="([^"]+)" method="post"%s>(.*?)</form>'
-    FORM_INPUT_PATTERN = r'<input[^>]* name="([^"]+)" value="([^"]+)" />'
-    CHECK_URL_PATTERN = r"ajax_check_url\s*=\s*'([^']+)';"
-    SECONDS_PATTERN = r"seconds\s*=\s*(\d+);"
-    
-    FILE_INFO_PATTERN = r'<h1[^>]*>File: <a[^>]*><span>(?P<N>[^<]+)</span></a> [<span>(?P<S>[0-9.]+)\s*(?P<U>[kKMG])i?[Bb]</span>]</h1>'
-    FILE_OFFLINE_PATTERN = r'<div id="download_content" class="hide-block">[^<]*<br>File not found<br /></div>'
+    __pattern__ = r'https?://(?:www\.)?(letitbit|shareflare)\.net/download/.+'
+    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+
+    __description__ = """Letitbit.net hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("zoidberg", "zoidberg@mujmail.cz"),
+                       ("z00nx", "z00nx0@gmail.com")]
+
+
+    URL_REPLACEMENTS = [(r"(?<=http://)([^/]+)", "letitbit.net")]
+
+    SECONDS_PATTERN = r'seconds\s*=\s*(\d+);'
+    CAPTCHA_CONTROL_FIELD = r'recaptcha_control_field\s=\s\'(.+?)\''
+
 
     def setup(self):
-        self.resumeDownload = self.multiDL = True if self.account else False
-        self.chunkLimit = 1
+        self.resume_download = True
 
-    def process(self, pyfile):
-        self.html = self.load(pyfile.url, decode=True)
-        if re.search(self.FILE_OFFLINE_PATTERN, self.html): self.offline()
 
-        try:
-            action, form = re.search(self.FORM_PATTERN % (' id="ifree_form"', ''), self.html, re.DOTALL).groups()
-            inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
-            pyfile.name = inputs['name']
-            pyfile.size = float(inputs['sssize'])/1024
-        except Exception, e:
-            self.logError(e)
-            self.parseError("page 1 / ifree_form")
+    def handle_free(self, pyfile):
+        action, inputs = self.parse_html_form('id="ifree_form"')
+        if not action:
+            self.error(_("ifree_form"))
 
-        #self.logDebug(inputs)
+        pyfile.size = float(inputs['sssize'])
+        self.log_debug(action, inputs)
         inputs['desc'] = ""
-        self.html = self.load("http://letitbit.net" + action, post = inputs)
 
-        try:
-            action, form = re.search(self.FORM_PATTERN % ('', ' id="d3_form"'), self.html, re.DOTALL).groups()
-            inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
-        except Exception, e:
-            self.logError(e)
-            self.parseError("page 2 / d3_form")
+        self.html = self.load(urlparse.urljoin("http://letitbit.net/", action), post=inputs)
 
-        self.html = self.load(action, post = inputs)
-        try:
-            ajax_check_url = re.search(self.CHECK_URL_PATTERN, self.html).group(1)
-            found = re.search(self.SECONDS_PATTERN, self.html)
-            seconds = int(found.group(1)) if found else 60
-            self.setWait(seconds+1)
-            self.wait()
-        except Exception, e:
-            self.logError(e)
-            self.parseError("page 3 / js")
+        m = re.search(self.SECONDS_PATTERN, self.html)
+        seconds = int(m.group(1)) if m else 60
 
-        download_url = self.load(ajax_check_url, post = inputs)
-        self.download(download_url)
+        self.log_debug("Seconds found", seconds)
 
-getInfo = create_getInfo(LetitbitNet)
+        m = re.search(self.CAPTCHA_CONTROL_FIELD, self.html)
+        recaptcha_control_field = m.group(1)
+
+        self.log_debug("ReCaptcha control field found", recaptcha_control_field)
+
+        self.wait(seconds)
+
+        res = self.load("http://letitbit.net/ajax/download3.php", post=" ")
+        if res != '1':
+            self.error(_("Unknown response - ajax_check_url"))
+
+        self.log_debug(res)
+
+        recaptcha = ReCaptcha(self)
+        response, challenge = recaptcha.challenge()
+
+        post_data = {'recaptcha_challenge_field': challenge,
+                     'recaptcha_response_field': response,
+                     'recaptcha_control_field': recaptcha_control_field}
+
+        self.log_debug("Post data to send", post_data)
+
+        res = self.load("http://letitbit.net/ajax/check_recaptcha.php", post=post_data)
+
+        self.log_debug(res)
+
+        if not res:
+            self.captcha.invalid()
+
+        if res == "error_free_download_blocked":
+            self.log_warning(_("Daily limit reached"))
+            self.wait(seconds_to_midnight(gmt=2), True)
+
+        if res == "error_wrong_captcha":
+            self.captcha.invalid()
+            self.retry()
+
+        elif res.startswith('['):
+            urls = json_loads(res)
+
+        elif res.startswith('http://'):
+            urls = [res]
+
+        else:
+            self.error(_("Unknown response - captcha check"))
+
+        self.link = urls[0]
+
+
+    def handle_premium(self, pyfile):
+        api_key = self.user
+        premium_key = self.account.get_info(self.user)['login']['password']
+
+        json_data = [api_key, ["download/direct_links", {'pass': premium_key, 'link': pyfile.url}]]
+        api_rep = self.load('http://api.letitbit.net/json', post={'r': json_dumps(json_data)})
+        self.log_debug("API Data: " + api_rep)
+        api_rep = json_loads(api_rep)
+
+        if api_rep['status'] == "FAIL":
+            self.fail(api_rep['data'])
+
+        self.link = api_rep['data'][0][0]

@@ -1,90 +1,125 @@
 # -*- coding: utf-8 -*-
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-
-    @author: zoidberg
-"""
 
 import re
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
-from module.network.RequestFactory import getURL
-from module.plugins.ReCaptcha import ReCaptcha
+import time
+
 from module.common.json_layer import json_loads
-from time import time
+from module.plugins.captcha.ReCaptcha import ReCaptcha
+from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+
 
 class FilepostCom(SimpleHoster):
-    __name__ = "FilepostCom"
-    __type__ = "hoster"
-    __pattern__ = r"https?://(?:www\.)?filepost\.com/files/([^/]+).*"
-    __version__ = "0.23"
-    __description__ = """Filepost.com plugin - free only"""
-    __author_name__ = ("zoidberg")
-    __author_mail__ = ("zoidberg@mujmail.cz")
+    __name__    = "FilepostCom"
+    __type__    = "hoster"
+    __version__ = "0.35"
+    __status__  = "testing"
 
-    FILE_INFO_PATTERN = r'<h1>(?P<N>[^<]+)</h1>\s*<div class="ul">\s*<ul>\s*<li><span>Size:</span> (?P<S>[0-9.]+) (?P<U>[kKMG])i?B</li>'
-    FILE_OFFLINE_PATTERN = r'class="error_msg_title"> Invalid or Deleted File. </div>'
-    RECAPTCHA_KEY_PATTERN = r"Captcha.init\({\s*key:\s*'([^']+)'"
-    FLP_TOKEN_PATTERN = r"store.set\('(?:flp_)?token', '([^']+)'\);"
+    __pattern__ = r'https?://(?:www\.)?(?:filepost\.com/files|fp\.io)/(?P<ID>[^/]+)'
+    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
 
-    def handleFree(self):
-        # Find token and captcha key
-        file_id = re.search(self.__pattern__, self.pyfile.url).group(1)
+    __description__ = """Filepost.com hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
 
-        found = re.search(self.FLP_TOKEN_PATTERN, self.html)
-        if not found: self.parseError("Token")
-        flp_token = found.group(1)
 
-        found = re.search(self.RECAPTCHA_KEY_PATTERN, self.html)
-        if not found: self.parseError("Captcha key")
-        captcha_key = found.group(1)
+    INFO_PATTERN = r'<input type="text" id="url" value=\'<a href.*?>(?P<N>[^>]+?) - (?P<S>[\d.,]+) (?P<U>[\w^_]+)</a>\' class="inp_text"/>'
+    OFFLINE_PATTERN = r'class="error_msg_title"> Invalid or Deleted File. </div>|<div class="file_info file_info_deleted">'
 
-        url = 'https://filepost.com/files/get/'
+    PREMIUM_ONLY_PATTERN = r'members only. Please upgrade to premium|a premium membership is required to download this file'
+    RECAPTCHA_PATTERN = r'Captcha.init\({\s*key:\s*\'(.+?)\''
+    FLP_TOKEN_PATTERN = r'set_store_options\({token: \'(.+?)\''
 
-        # Get wait time
-        get_dict = {'SID' : self.req.cj.getCookie('SID'), 'JsHttpRequest' : str(int(time()*10000)) + '-xml'}
-        post_dict = {'action' : 'set_download', 'download' : flp_token, 'code' : file_id}
-        json_response = json_loads(self.load(url, get = get_dict, post = post_dict))
-        self.logDebug(json_response)
-        try:
-            self.setWait(int(json_response['js']['answer']['wait_time']))
-        except Exception, e:
-            self.logError(e)
-            self.self.parseError("Wait time")
-        self.wait()
 
-        # Solve recaptcha
-        recaptcha = ReCaptcha(self)
-        for i in range(5):
-            captcha_challenge, captcha_response = recaptcha.challenge(captcha_key)
-            self.logDebug("RECAPTCHA: %s : %s : %s" % (captcha_key, captcha_challenge, captcha_response))
+    def handle_free(self, pyfile):
+        m = re.search(self.FLP_TOKEN_PATTERN, self.html)
+        if m is None:
+            self.error(_("Token"))
+        flp_token = m.group(1)
 
-            get_dict['JsHttpRequest'] = str(int(time()*10000)) + '-xml'
-            post_dict = {'download' : flp_token, 'code' : file_id,
-                "recaptcha_challenge_field" : captcha_challenge,
-                "recaptcha_response_field" : captcha_response
-                }
+        m = re.search(self.RECAPTCHA_PATTERN, self.html)
+        if m is None:
+            self.error(_("Captcha key"))
+        captcha_key = m.group(1)
 
-            json_response = json_loads(self.load(url, get = get_dict, post = post_dict))
-            try:
-                download_url = json_response['js']['answer']['link']
-                self.correctCaptcha()
-                break
-            except:
-                self.invalidCaptcha()
-        else: self.fail("Invalid captcha")
+        #: Get wait time
+        get_dict = {'SID': self.req.cj.getCookie('SID'), 'JsHttpRequest': str(int(time.time() * 10000)) + '-xml'}
+        post_dict = {'action': 'set_download', 'token': flp_token, 'code': self.info['pattern']['ID']}
+        wait_time = int(self.get_json_response(get_dict, post_dict, 'wait_time'))
 
-        # Download
-        self.download(download_url)
-        
+        if wait_time > 0:
+            self.wait(wait_time)
+
+        post_dict = {'token': flp_token, 'code': self.info['pattern']['ID'], 'file_pass': ''}
+
+        if 'var is_pass_exists = true;' in self.html:
+            #: Solve password
+            password = self.get_password()
+
+            if password:
+                self.log_info(_("Password protected link, trying ") + file_pass)
+
+                get_dict['JsHttpRequest'] = str(int(time.time() * 10000)) + '-xml'
+                post_dict['file_pass'] = file_pass
+
+                self.link = self.get_json_response(get_dict, post_dict, 'link')
+
+                if not self.link:
+                    self.fail(_("Incorrect password"))
+            else:
+                self.fail(_("No password found"))
+
+        else:
+            #: Solve recaptcha
+            recaptcha = ReCaptcha(self)
+
+            for i in xrange(5):
+                get_dict['JsHttpRequest'] = str(int(time.time() * 10000)) + '-xml'
+                if i:
+                    post_dict['recaptcha_response_field'], post_dict['recaptcha_challenge_field'] = recaptcha.challenge(
+                        captcha_key)
+                    self.log_debug(u"RECAPTCHA: %s : %s : %s" % (
+                        captcha_key, post_dict['recaptcha_challenge_field'], post_dict['recaptcha_response_field']))
+
+                self.link = self.get_json_response(get_dict, post_dict, 'link')
+
+            else:
+                self.fail(_("Invalid captcha"))
+
+
+    def get_json_response(self, get_dict, post_dict, field):
+        res = json_loads(self.load('https://filepost.com/files/get/', get=get_dict, post=post_dict))
+
+        self.log_debug(res)
+
+        if not 'js' in res:
+            self.error(_("JSON %s 1") % field)
+
+        #: I changed js_answer to res['js'] since js_answer is nowhere set.
+        #: I don't know the JSON-HTTP specs in detail, but the previous author
+        #: Accessed res['js']['error'] as well as js_answer['error'].
+        #: See the two lines commented out with  "# ~?".
+        if 'error' in res['js']:
+
+            if res['js']['error'] == "download_delay":
+                self.retry(wait_time=res['js']['params']['next_download'])
+                #: ~? self.retry(wait_time=js_answer['params']['next_download'])
+
+            elif 'Wrong file password' in res['js']['error'] \
+                 or 'You entered a wrong CAPTCHA code' in res['js']['error'] \
+                 or 'CAPTCHA Code nicht korrekt' in res['js']['error']:
+                return None
+
+            elif 'CAPTCHA' in res['js']['error']:
+                self.log_debug("Error response is unknown, but mentions CAPTCHA")
+                return None
+
+            else:
+                self.fail(res['js']['error'])
+
+        if not 'answer' in res['js'] or not field in res['js']['answer']:
+            self.error(_("JSON %s 2") % field)
+
+        return res['js']['answer'][field]
+
+
 getInfo = create_getInfo(FilepostCom)

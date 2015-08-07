@@ -1,49 +1,62 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import base64
+from __future__ import with_statement
+
 import binascii
 import re
 
-from module.plugins.Container import Container
+from Crypto.Cipher import AES
+
+from module.plugins.internal.Container import Container
+from module.utils import fs_encode
+
 
 class RSDF(Container):
-    __name__ = "RSDF"
-    __version__ = "0.21"
-    __pattern__ = r".*\.rsdf"
-    __description__ = """RSDF Container Decode Plugin"""
-    __author_name__ = ("RaNaN", "spoob")
-    __author_mail__ = ("RaNaN@pyload.org", "spoob@pyload.org")
+    __name__    = "RSDF"
+    __type__    = "container"
+    __version__ = "0.31"
+    __status__  = "testing"
 
-    
+    __pattern__ = r'.+\.rsdf$'
+
+    __description__ = """RSDF container decrypter plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("RaNaN", "RaNaN@pyload.org"),
+                       ("spoob", "spoob@pyload.org"),
+                       ("Walter Purcaro", "vuolter@gmail.com")]
+
+
+    KEY = "8C35192D964DC3182C6F84F3252239EB4A320D2500000000"
+    IV  = "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+
+
     def decrypt(self, pyfile):
-    
-        from Crypto.Cipher import AES
+        KEY = binascii.unhexlify(self.KEY)
+        IV  = binascii.unhexlify(self.IV)
 
-        infile = pyfile.url.replace("\n", "")
-        Key = binascii.unhexlify('8C35192D964DC3182C6F84F3252239EB4A320D2500000000')
+        iv     = AES.new(KEY, AES.MODE_ECB).encrypt(IV)
+        cipher = AES.new(KEY, AES.MODE_CFB, iv)
 
-        IV = binascii.unhexlify('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')
-        IV_Cipher = AES.new(Key, AES.MODE_ECB)
-        IV = IV_Cipher.encrypt(IV)
+        try:
+            fs_filename = fs_encode(pyfile.url.strip())
+            with open(fs_filename, 'r') as rsdf:
+                data = rsdf.read()
 
-        obj = AES.new(Key, AES.MODE_CFB, IV)
+        except IOError, e:
+            self.fail(e)
 
-        rsdf = open(infile, 'r')
+        if re.search(r"<title>404 - Not Found</title>", data):
+            pyfile.setStatus("offline")
 
-        data = rsdf.read()
-        rsdf.close()
+        else:
+            try:
+                raw_links = binascii.unhexlify(''.join(data.split())).splitlines()
 
-        if re.search(r"<title>404 - Not Found</title>", data) is None:
-            data = binascii.unhexlify(''.join(data.split()))
-            data = data.splitlines()
+            except TypeError:
+                self.fail(_("Container is corrupted"))
 
-            links = []
-            for link in data:
-                link = base64.b64decode(link)
-                link = obj.decrypt(link)
-                decryptedUrl = link.replace('CCF: ', '')
-                links.append(decryptedUrl)
-
-            self.log.debug("%s: adding package %s with %d links" % (self.__name__,pyfile.package().name,len(links)))
-            self.packages.append((pyfile.package().name, links))        
+            for link in raw_links:
+                if not link:
+                    continue
+                link = cipher.decrypt(link.decode('base64')).replace('CCF: ', '')
+                self.urls.append(link)

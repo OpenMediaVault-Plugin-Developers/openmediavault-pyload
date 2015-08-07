@@ -1,54 +1,80 @@
 # -*- coding: utf-8 -*-
 
-"""
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 3 of the License,
-    or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, see <http://www.gnu.org/licenses/>.
-
-    @author: zoidberg
-"""
-
-from module.plugins.Account import Account
 import re
+import time
+
+from module.plugins.internal.Account import Account
+
 
 class HellshareCz(Account):
-    __name__ = "HellshareCz"
-    __version__ = "0.11"
-    __type__ = "account"
-    __description__ = """hellshare.cz account plugin"""
-    __author_name__ = ("zoidberg")
-    __author_mail__ = ("zoidberg@mujmail.cz")
+    __name__    = "HellshareCz"
+    __type__    = "account"
+    __version__ = "0.18"
+    __status__  = "testing"
 
-    CREDIT_LEFT_PATTERN = r'<div class="credit-link">\s*<table>\s*<tr>\s*<th>(\d+)</th>'
+    __description__ = """Hellshare.cz account plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
 
-    def loadAccountInfo(self, user, req):
+
+    CREDIT_LEFT_PATTERN = r'<div class="credit-link">\s*<table>\s*<tr>\s*<th>(\d+|\d\d\.\d\d\.)</th>'
+
+
+    def parse_info(self, user, password, data, req):
         self.relogin(user)
-        html = req.load("http://www.hellshare.com/")
+        html = self.load("http://www.hellshare.com/")
 
-        found = re.search(self.CREDIT_LEFT_PATTERN, html)
-        if found is None:
-            credits = 0
+        m = re.search(self.CREDIT_LEFT_PATTERN, html)
+        if m is None:
+            trafficleft = None
+            validuntil = None
+            premium = False
         else:
-            credits = int(found.group(1)) * 1024
+            credit = m.group(1)
+            premium = True
+            try:
+                if "." in credit:
+                    #: Time-based account
+                    vt = [int(x) for x in credit.split('.')[:2]]
+                    lt = time.localtime()
+                    year = lt.tm_year + int(vt[1] < lt.tm_mon or (vt[1] is lt.tm_mon and vt[0] < lt.tm_mday))
+                    validuntil = time.mktime(time.strptime("%s%d 23:59:59" % (credit, year), "%d.%m.%Y %H:%M:%S"))
+                    trafficleft = -1
+                else:
+                    #: Traffic-based account
+                    trafficleft = self.parse_traffic(credit + "MB")
+                    validuntil = -1
+            except Exception, e:
+                self.log_error(_("Unable to parse credit info"), e)
+                validuntil = -1
+                trafficleft = -1
 
-        return {"validuntil": -1, "trafficleft": credits}
+        return {'validuntil': validuntil, 'trafficleft': trafficleft, 'premium': premium}
 
-    def login(self, user, data, req):
 
-        html = req.load('http://www.hellshare.com/login?do=loginForm-submit', post={
-                "login": "Log in",
-                "password": data["password"],
-                "username": user
-                })
+    def login(self, user, password, data, req):
+        html = self.load('http://www.hellshare.com/')
+        if req.lastEffectiveURL != 'http://www.hellshare.com/':
+            #: Switch to English
+            self.log_debug("Switch lang - URL: %s" % req.lastEffectiveURL)
+
+            json = self.load("%s?do=locRouter-show" % req.lastEffectiveURL)
+            hash = re.search(r"(\-\-[0-9a-f]+\-)", json).group(1)
+
+            self.log_debug("Switch lang - HASH: %s" % hash)
+
+            html = self.load('http://www.hellshare.com/%s/' % hash)
+
+        if re.search(self.CREDIT_LEFT_PATTERN, html):
+            self.log_debug("Already logged in")
+            return
+
+        html = self.load("https://www.hellshare.com/login",
+                         get={'do': "loginForm-submit"},
+                         post={'login'     : "Log in",
+                               'password'  : password,
+                               'username'  : user,
+                               'perm_login': "on"})
 
         if "<p>You input a wrong user name or wrong password</p>" in html:
-            self.wrongPassword()
+            self.login_fail()

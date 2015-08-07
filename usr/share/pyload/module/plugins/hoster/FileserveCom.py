@@ -1,185 +1,214 @@
 # -*- coding: utf-8 -*-
-from __future__ import with_statement
 
 import re
 
-from module.plugins.Hoster import Hoster
-from module.plugins.ReCaptcha import ReCaptcha
-
 from module.common.json_layer import json_loads
-from module.network.RequestFactory import getURL
-from module.utils import parseFileSize
+from module.network.RequestFactory import getURL as get_url
+from module.plugins.internal.Hoster import Hoster
+from module.plugins.internal.Plugin import chunks
+from module.plugins.captcha.ReCaptcha import ReCaptcha
+from module.plugins.internal.SimpleHoster import seconds_to_midnight
+from module.utils import parseFileSize as parse_size
 
 
-def getInfo(urls):
-    reg = r"<td>(http://(?:www\.)?fileserve\.com/file/.+(?:[\r\n\t]+)?)</td>[\r\n\t ]+<td>(.*?)</td>[\r\n\t ]+<td>(.*?)</td>[\r\n\t ]+<td>(Available|Not available)(?:\&nbsp;)?(?:<img|</td>)"
-    url = "http://fileserve.com/link-checker.php"
+def check_file(plugin, urls):
+    html = get_url(plugin.URLS[1], post={'urls': "\n".join(urls)})
 
-    #get all at once, shows strange behavior otherwise
-    html = getURL(url, post={"submit": "Check Urls", "urls": "\n".join(urls)}, decode=True)
+    file_info = []
+    for li in re.finditer(plugin.LINKCHECK_TR, html, re.S):
+        try:
+            cols = re.findall(plugin.LINKCHECK_TD, li.group(1))
+            if cols:
+                file_info.append((
+                    cols[1] if cols[1] != '--' else cols[0],
+                    parse_size(cols[2]) if cols[2] != '--' else 0,
+                    2 if cols[3].startswith('Available') else 1,
+                    cols[0]))
+        except Exception, e:
+            continue
 
-    match = re.findall(reg, html, re.IGNORECASE + re.MULTILINE)
-
-    result = []
-    for url, name, size, status in match:
-        result.append((name, parseFileSize(size), 1 if status == "Not available" else 2, url))
-
-    yield result
+    return file_info
 
 
 class FileserveCom(Hoster):
-    __name__ = "FileserveCom"
-    __type__ = "hoster"
-    __pattern__ = r"http://(www\.)?fileserve\.com/file/[a-zA-Z0-9]+"
-    __version__ = "0.43"
-    __description__ = """Fileserve.Com File Download Hoster"""
-    __author_name__ = ("jeix", "mkaay", "paul king")
-    __author_mail__ = ("jeix@hasnomail.de", "mkaay@mkaay.de", "")
+    __name__    = "FileserveCom"
+    __type__    = "hoster"
+    __version__ = "0.58"
+    __status__  = "testing"
 
-    FILE_ID_KEY = r"fileserve\.com/file/(?P<id>\w+)"
-    FILE_CHECK_KEY = r"<td>http://www.fileserve\.com/file/(?P<id>\w+)</td>.*?<td>(?P<name>.*?)</td>.*?<td>(?P<units>.*?) (?P<scale>.B)</td>.*?<td>(?P<online>.*?)</td>"
-    CAPTCHA_KEY_PATTERN = r"var reCAPTCHA_publickey='(?P<key>.*?)';"
-    LONG_WAIT_PATTERN = r"You need to wait (\d+) seconds to start another download"
+    __pattern__ = r'http://(?:www\.)?fileserve\.com/file/(?P<ID>[^/]+)'
 
-    def init(self):
-        if not self.premium:
-            self.multiDL = False
-            self.resumeDownload = False
-            self.chunkLimit = 1
+    __description__ = """Fileserve.com hoster plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("jeix"     , "jeix@hasnomail.de"  ),
+                       ("mkaay"    , "mkaay@mkaay.de"     ),
+                       ("Paul King", None                 ),
+                       ("zoidberg" , "zoidberg@mujmail.cz")]
+
+
+    URLS = ["http://www.fileserve.com/file/",
+            "http://www.fileserve.com/link-checker.php",
+            "http://www.fileserve.com/checkReCaptcha.php"]
+
+    LINKCHECK_TR = r'<tr>\s*(<td>http://www\.fileserve\.com/file/.*?)</tr>'
+    LINKCHECK_TD = r'<td>(?:<.*?>|&nbsp;)*([^<]*)'
+
+    CAPTCHA_KEY_PATTERN   = r'var reCAPTCHA_publickey=\'(.+?)\''
+    LONG_WAIT_PATTERN     = r'<li class="title">You need to wait (\d+) (\w+) to start another download\.</li>'
+    LINK_EXPIRED_PATTERN  = r'Your download link has expired'
+    DL_LIMIT_PATTERN      = r'Your daily download limit has been reached'
+    NOT_LOGGED_IN_PATTERN = r'<form (name="loginDialogBoxForm"|id="login_form")|<li><a href="/login\.php">Login</a></li>'
+
+
+    def setup(self):
+        self.resume_download = self.multiDL = self.premium
+        self.file_id = re.match(self.__pattern__, self.pyfile.url).group('ID')
+        self.url     = "%s%s" % (self.URLS[0], self.file_id)
+
+        self.log_debug("File ID: %s URL: %s" % (self.file_id, self.url))
+
 
     def process(self, pyfile):
-        self.checkFile()
-        if self.account and self.premium:
-            self.handlePremium()
+        pyfile.name, pyfile.size, status, self.url = check_file(self, [self.url])[0]
+        if status != 2:
+            self.offline()
+        self.log_debug("File Name: %s Size: %d" % (pyfile.name, pyfile.size))
+
+        if self.premium:
+            self.handle_premium()
         else:
-            self.handleFree()
-
-    def checkFile(self):
-        self.file_id = re.search(self.FILE_ID_KEY, self.pyfile.url).group("id")
-        self.logDebug("file id is %s" % self.file_id)
-
-        self.pyfile.url = "http://www.fileserve.com/file/" + self.file_id
-
-        linkCheck = self.load("http://www.fileserve.com/link-checker.php",
-                              post={"urls": self.pyfile.url},
-                              ref=False, cookies=False if self.account else True, decode=True)
-
-        linkMatch = re.search(self.FILE_CHECK_KEY, linkCheck.replace("\r\n", ""))
-        if not linkMatch:
-            self.logDebug("couldn't extract file status")
-            self.offline()
-
-        if linkMatch.group("online").find("Available"):
-            self.logDebug("file is not available : %s" % linkMatch.group("online"))
-            self.offline()
-
-        self.pyfile.name = linkMatch.group("name")
+            self.handle_free()
 
 
-    def handlePremium(self):
-        # TODO: handle login timeouts
-        self.download(self.pyfile.url)
-
-        check = self.checkDownload({"login": '<form action="/login.php" method="POST">'})
-
-        if check == "login":
-            self.account.relogin(self.user)
-            self.retry(reason=_("Not logged in."))
-
-
-    def handleFree(self):
-        self.html = self.load(self.pyfile.url)
-        action = self.load(self.pyfile.url, post={"checkDownload": "check"}, decode=True)
-        action = json_loads(action.replace(u"\ufeff", ""))
-        self.logDebug("action is : %s" % action)
+    def handle_free(self):
+        self.html = self.load(self.url)
+        action = self.load(self.url, post={'checkDownload': "check"})
+        action = json_loads(action)
+        self.log_debug(action)
 
         if "fail" in action:
-            if action["fail"] == "timeLimit":
-                html = self.load(self.pyfile.url,
-                                 post={"checkDownload": "showError",
-                                       "errorType": "timeLimit"},
-                                 decode=True)
-                wait = re.search(self.LONG_WAIT_PATTERN, html)
-                if wait:
-                    wait = int(wait.group(1))
-                else:
-                    wait = 720
-                self.setWait(wait, True)
-                self.wait()
-                self.retry()
+            if action['fail'] == "timeLimit":
+                self.html = self.load(self.url, post={'checkDownload': "showError", 'errorType': "timeLimit"})
 
-            elif action["fail"] == "parallelDownload":
-                self.logWarning(_("Parallel download error, now waiting 60s."))
-                self.retry(wait_time=60, reason="parallelDownload")
+                self.do_long_wait(re.search(self.LONG_WAIT_PATTERN, self.html))
+
+            elif action['fail'] == "parallelDownload":
+                self.log_warning(_("Parallel download error, now waiting 60s"))
+                self.retry(wait_time=60, reason=_("parallelDownload"))
 
             else:
-                self.fail("Download check returned %s" % action["fail"])
+                self.fail(_("Download check returned: %s") % action['fail'])
 
-        if action["success"] == "showCaptcha":
-            self.doCaptcha()
-            self.doTimmer()
-        elif action["success"] == "showTimmer":
-            self.doTimmer()
+        elif "success" in action:
+            if action['success'] == "showCaptcha":
+                self.do_captcha()
+                self.do_timmer()
+            elif action['success'] == "showTimmer":
+                self.do_timmer()
 
-        # show download link
-        response = self.load(self.pyfile.url, post={"downloadLink": "show"}, decode=True)
-        self.logDebug("show downloadLink response : %s" % response)
-        if not response.find("fail"):
-            self.fail("Couldn't retrieve download url")
+        else:
+            self.error(_("Unknown server response"))
 
-        # this may either download our file or forward us to an error page
-        self.download(self.pyfile.url, post={"download": "normal"})
+        #: Show download link
+        res = self.load(self.url, post={'downloadLink': "show"})
+        self.log_debug("Show downloadLink response: %s" % res)
+        if "fail" in res:
+            self.error(_("Couldn't retrieve download url"))
 
-        check = self.checkDownload({"expired": "Your download link has expired",
-                                    "wait": re.compile(self.LONG_WAIT_PATTERN),
-                                    "limit": "Your daily download limit has been reached"})
+        #: This may either download our file or forward us to an error page
+        self.download(self.url, post={'download': "normal"})
+        self.log_debug(self.req.http.lastEffectiveURL)
+
+        check = self.check_download({'expired': self.LINK_EXPIRED_PATTERN,
+                                    'wait'   : re.compile(self.LONG_WAIT_PATTERN),
+                                    'limit'  : self.DL_LIMIT_PATTERN})
 
         if check == "expired":
-            self.logDebug("Download link was expired")
+            self.log_debug("Download link was expired")
             self.retry()
+
         elif check == "wait":
-            wait_time = 720
-            if self.lastCheck is not None:
-                wait_time = int(self.lastCheck.group(1))
-            self.setWait(wait_time + 3, True)
-            self.wait()
-            self.retry()
+            self.do_long_wait(self.last_check)
+
         elif check == "limit":
-            #download limited reached for today (not a exact time known)
+            self.log_warning(_("Download limited reached for today"))
+            self.wait(seconds_to_midnight(gmt=2), True)
+            self.retry()
 
-            self.setWait(180 * 60, True) # wait 3 hours
-            self.wait()
-            self.retry(max_tries=0)
+        self.thread.m.reconnecting.wait(3)  #: Ease issue with later downloads appearing to be in parallel
 
-        self.thread.m.reconnecting.wait(3) # Ease issue with later downloads appearing to be in parallel
 
-    def doTimmer(self):
-        wait = self.load(self.pyfile.url,
-                         post={"downloadLink": "wait"},
-                         decode=True).replace(u"\ufeff", "") # remove UTF8 BOM
-        self.logDebug("wait response : %s" % wait)
+    def do_timmer(self):
+        res = self.load(self.url, post={'downloadLink': "wait"})
+        self.log_debug("Wait response: %s" % res[:80])
 
-        if not wait.find("fail"):
-            self.fail("Failed getting wait time")
+        if "fail" in res:
+            self.fail(_("Failed getting wait time"))
 
-        self.setWait(int(wait)) # remove UTF8 BOM
-        self.wait()
+        if self.__name__ == "FilejungleCom":
+            m = re.search(r'"waitTime":(\d+)', res)
+            if m is None:
+                self.fail(_("Cannot get wait time"))
+            wait_time = int(m.group(1))
+        else:
+            wait_time = int(res) + 3
 
-    def doCaptcha(self):
-        captcha_key = re.search(self.CAPTCHA_KEY_PATTERN, self.html).group("key")
+        self.wait(wait_time)
+
+
+    def do_captcha(self):
+        captcha_key = re.search(self.CAPTCHA_KEY_PATTERN, self.html).group(1)
         recaptcha = ReCaptcha(self)
 
-        for i in range(5):
-            challenge, code = recaptcha.challenge(captcha_key)
-
-            response = json_loads(self.load("http://www.fileserve.com/checkReCaptcha.php",
-                                            post={'recaptcha_challenge_field': challenge,
-                                                  'recaptcha_response_field': code,
-                                                  'recaptcha_shortencode_field': self.file_id}).replace(u"\ufeff", ""))
-            self.logDebug("reCaptcha response : %s" % response)
-            if not response["success"]:
-                self.invalidCaptcha()
+        for _i in xrange(5):
+            response, challenge = recaptcha.challenge(captcha_key)
+            res = json_loads(self.load(self.URLS[2],
+                                       post={'recaptcha_challenge_field'  : challenge,
+                                             'recaptcha_response_field'   : response,
+                                             'recaptcha_shortencode_field': self.file_id}))
+            if not res['success']:
+                self.captcha.invalid()
             else:
-                self.correctCaptcha()
+                self.captcha.correct()
                 break
-     
+        else:
+            self.fail(_("Invalid captcha"))
+
+
+    def do_long_wait(self, m):
+        wait_time = (int(m.group(1)) * {'seconds': 1, 'minutes': 60, 'hours': 3600}[m.group(2)]) if m else 12 * 60
+        self.wait(wait_time, True)
+        self.retry()
+
+
+    def handle_premium(self):
+        premium_url = None
+        if self.__name__ == "FileserveCom":
+            #: Try api download
+            res = self.load("http://app.fileserve.com/api/download/premium/",
+                            post={'username': self.user,
+                                  'password': self.account.get_info(self.user)['login']['password'],
+                                  'shorten': self.file_id})
+            if res:
+                res = json_loads(res)
+                if res['error_code'] == "302":
+                    premium_url = res['next']
+                elif res['error_code'] in ["305", "500"]:
+                    self.temp_offline()
+                elif res['error_code'] in ["403", "605"]:
+                    self.restart(nopremium=True)
+                elif res['error_code'] in ["606", "607", "608"]:
+                    self.offline()
+                else:
+                    self.log_error(res['error_code'], res['error_message'])
+
+        self.download(premium_url or self.pyfile.url)
+
+        if not premium_url and self.check_download({'login': re.compile(self.NOT_LOGGED_IN_PATTERN)}):
+            self.account.relogin(self.user)
+            self.retry(reason=_("Not logged in"))
+
+
+def get_info(urls):
+    for chunk in chunks(urls, 100):
+        yield check_file(FileserveCom, chunk)

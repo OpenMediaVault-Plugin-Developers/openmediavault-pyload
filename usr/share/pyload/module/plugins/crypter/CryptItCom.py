@@ -1,38 +1,20 @@
 # -*- coding: utf-8 -*-
 
-
-import re
-
-from random import randint
-
-from module.plugins.Crypter import Crypter
+from module.plugins.internal.DeadCrypter import DeadCrypter, create_getInfo
 
 
-class CryptItCom(Crypter):
-    __name__ = "CryptItCom"
-    __type__ = "container"
-    __pattern__ = r"http://[\w\.]*?crypt-it\.com/(s|e|d|c)/[\w]+"
-    __version__ = "0.1"
-    __description__ = """Crypt.It.com Container Plugin"""
-    __author_name__ = ("jeix")
-    __author_mail__ = ("jeix@hasnomail.de")
-        
-    def file_exists(self):
-        html = self.load(self.pyfile.url)
-        if r'<div class="folder">Was ist Crypt-It</div>' in html:
-            return False
-        return True
+class CryptItCom(DeadCrypter):
+    __name__    = "CryptItCom"
+    __type__    = "crypter"
+    __version__ = "0.12"
+    __status__  = "testing"
 
-    def decrypt(self, pyfile):
-        if not self.file_exists():
-            self.offline()
+    __pattern__ = r'http://(?:www\.)?crypt-it\.com/(s|e|d|c)/\w+'
+    __config__  = []  #@TODO: Remove in 0.4.10
 
-        # @TODO parse name and password
-        repl_pattern = r"/(s|e|d|c)/"
-        url = re.sub(repl_pattern, r"/d/", self.pyfile.url)
+    __description__ = """Crypt-it.com decrypter plugin"""
+    __license__     = "GPLv3"
+    __authors__     = [("jeix", "jeix@hasnomail.de")]
 
-        pyfile.name = "tmp_cryptit_%s.ccf" % randint(0,1000)
-        location = self.download(url)
 
-        self.packages.append(["Crypt-it Package", [location], "Crypt-it Package"])
-        
+getInfo = create_getInfo(CryptItCom)
