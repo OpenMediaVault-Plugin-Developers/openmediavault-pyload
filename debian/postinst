@@ -137,6 +137,7 @@ EOF
     chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_CLI}"
     chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_CORE}"
     chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_HOME_DIR}" -R
+    chown ${RUN_AS}:${RUN_GROUP} /usr/share/pyload -R
     chmod 775 "${PYLOAD_CLI}"
     chmod 775 "${PYLOAD_CORE}"
     chmod 755 "${PYLOAD_CORE_USR}"
