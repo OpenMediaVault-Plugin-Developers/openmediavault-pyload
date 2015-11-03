@@ -34,6 +34,7 @@ DAEMON_OPTS="${APP_PATH}/pyLoadCore.py --daemon --pidfile=${PID_FILE} --configdi
 if [ ! -d $PID_PATH ]; then
     mkdir -p $PID_PATH
     chown $RUN_AS $PID_PATH
+    chmod 777 $PID_PATH -R
 fi
 
 if [ -e $PID_FILE ]; then
