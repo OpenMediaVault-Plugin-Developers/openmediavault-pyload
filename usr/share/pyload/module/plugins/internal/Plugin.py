@@ -2,162 +2,32 @@
 
 from __future__ import with_statement
 
-import datetime
 import inspect
 import os
-import re
-import urllib
 
-if os.name != "nt":
+if os.name is not "nt":
     import grp
     import pwd
 
+import pycurl
+
+import module.plugins.internal.utils as utils
+
 from module.plugins.Plugin import Abort, Fail, Reconnect, Retry, SkipDownload as Skip  #@TODO: Remove in 0.4.10
-from module.utils import fs_encode, fs_decode, html_unescape, save_join as fs_join
-
-
-#@TODO: Move to utils in 0.4.10
-def decode(string, encoding='utf8'):
-    """ Decode string to unicode with utf8 """
-    if type(string) is str:
-        return string.decode(encoding, "replace")
-    else:
-        return string
-
-
-#@TODO: Move to utils in 0.4.10
-def encode(string, encoding='utf8'):
-    """ Decode string to utf8 """
-    if type(string) is unicode:
-        return string.encode(encoding, "replace")
-    else:
-        return string
-
-
-#@TODO: Move to utils in 0.4.10
-def exists(path):
-    if os.path.exists(path):
-        if os.name == "nt":
-            dir, name = os.path.split(path)
-            return name in os.listdir(dir)
-        else:
-            return True
-    else:
-        return False
-
-
-#@TODO: Move to utils in 0.4.10
-def fixurl(url):
-    return html_unescape(urllib.unquote(url.decode('unicode-escape'))).strip().rstrip('/')
-
-
-#@TODO: Move to utils in 0.4.10
-def timestamp():
-    return int(time.time() * 1000)
-
-
-def seconds_to_midnight(gmt=0):
-    now = datetime.datetime.utcnow() + datetime.timedelta(hours=gmt)
-
-    if now.hour == 0 and now.minute < 10:
-        midnight = now
-    else:
-        midnight = now + datetime.timedelta(days=1)
-
-    td = midnight.replace(hour=0, minute=10, second=0, microsecond=0) - now
-
-    if hasattr(td, 'total_seconds'):
-        res = td.total_seconds()
-    else:  #@NOTE: work-around for python 2.5 and 2.6 missing datetime.timedelta.total_seconds
-        res = (td.microseconds + (td.seconds + td.days * 24 * 3600) * 10**6) / 10**6
-
-    return int(res)
-
-
-def replace_patterns(string, ruleslist):
-    for r in ruleslist:
-        rf, rt = r
-        string = re.sub(rf, rt, string)
-    return string
-
-
-#@TODO: Remove in 0.4.10 and fix CookieJar.setCookie
-def set_cookie(cj, domain, name, value):
-    return cj.setCookie(domain, name, encode(value))
-
-
-def set_cookies(cj, cookies):
-    for cookie in cookies:
-        if isinstance(cookie, tuple) and len(cookie) == 3:
-            set_cookie(cj, *cookie)
-
-
-def parse_html_tag_attr_value(attr_name, tag):
-    m = re.search(r"%s\s*=\s*([\"']?)((?<=\")[^\"]+|(?<=')[^']+|[^>\s\"'][^>\s]*)\1" % attr_name, tag, re.I)
-    return m.group(2) if m else None
-
-
-def parse_html_form(attr_str, html, input_names={}):
-    for form in re.finditer(r"(?P<TAG><form[^>]*%s[^>]*>)(?P<CONTENT>.*?)</?(form|body|html)[^>]*>" % attr_str,
-                            html, re.S | re.I):
-        inputs = {}
-        action = parse_html_tag_attr_value("action", form.group('TAG'))
-
-        for inputtag in re.finditer(r'(<(input|textarea)[^>]*>)([^<]*(?=</\2)|)', form.group('CONTENT'), re.S | re.I):
-            name = parse_html_tag_attr_value("name", inputtag.group(1))
-            if name:
-                value = parse_html_tag_attr_value("value", inputtag.group(1))
-                if not value:
-                    inputs[name] = inputtag.group(3) or ""
-                else:
-                    inputs[name] = value
-
-        if input_names:
-            #: Check input attributes
-            for key, val in input_names.items():
-                if key in inputs:
-                    if isinstance(val, basestring) and inputs[key] is val:
-                        continue
-                    elif isinstance(val, tuple) and inputs[key] in val:
-                        continue
-                    elif hasattr(val, "search") and re.match(val, inputs[key]):
-                        continue
-                    break  #: Attibute value does not match
-                else:
-                    break  #: Attibute name does not match
-            else:
-                return action, inputs  #: Passed attribute check
-        else:
-            #: No attribute check
-            return action, inputs
-
-    return {}, None  #: No matching form found
-
-
-#@TODO: Move to utils in 0.4.10
-def chunks(iterable, size):
-    it   = iter(iterable)
-    item = list(islice(it, size))
-    while item:
-        yield item
-        item = list(islice(it, size))
+from module.plugins.internal.utils import *
 
 
 class Plugin(object):
     __name__    = "Plugin"
-    __type__    = "hoster"
-    __version__ = "0.30"
-    __status__  = "testing"
+    __type__    = "plugin"
+    __version__ = "0.59"
+    __status__  = "stable"
 
-    __pattern__ = r'^unmatchable$'
     __config__  = []  #: [("name", "type", "desc", "default")]
 
     __description__ = """Base plugin"""
     __license__     = "GPLv3"
-    __authors__     = [("RaNaN"         , "RaNaN@pyload.org" ),
-                       ("spoob"         , "spoob@pyload.org" ),
-                       ("mkaay"         , "mkaay@mkaay.de"   ),
-                       ("Walter Purcaro", "vuolter@gmail.com")]
+    __authors__     = [("Walter Purcaro", "vuolter@gmail.com")]
 
 
     def __init__(self, core):
@@ -165,10 +35,21 @@ class Plugin(object):
         self.init()
 
 
+    def __repr__(self):
+        return "<%(type)s %(name)s>" % {'type': self.__type__.capitalize(),
+                                        'name': self.classname}
+
+
+    @property
+    def classname(self):
+        return self.__class__.__name__
+
+
     def _init(self, core):
-        self.pyload = core
-        self.info   = {}  #: Provide information in dict here
-        self.req    = None
+        self.pyload    = core
+        self.info      = {}    #: Provide information in dict here
+        self.req       = None  #: Browser instance, see `network.Browser`
+        self.last_html = None
 
 
     def init(self):
@@ -180,33 +61,47 @@ class Plugin(object):
 
     def _log(self, level, plugintype, pluginname, messages):
         log = getattr(self.pyload.log, level)
-        msg = encode(" | ".join((a if isinstance(a, basestring) else str(a)).strip() for a in messages if a))
-        log("%(plugintype)s %(pluginname)s%(id)s: %(msg)s"
-            % {'plugintype': plugintype.upper(),
-               'pluginname': pluginname,
-               'id'        : ("[%s]" % self.pyfile.id) if hasattr(self, 'pyfile') else "",
-               'msg'       : msg})
+        msg = u" | ".join(decode(a).strip() for a in messages if a)
+        log("%(plugintype)s %(pluginname)s: %(msg)s" %
+            {'plugintype': plugintype.upper(),
+             'pluginname': pluginname,
+             'msg'       : msg})
 
 
-    def log_debug(self, *args):
-        if self.pyload.debug:
-            return self._log("debug", self.__type__, self.__name__, args)
+    def log_debug(self, *args, **kwargs):
+        self._log("debug", self.__type__, self.__name__, args)
+        if self.pyload.debug and kwargs.get('trace'):
+            self.print_exc()
 
 
-    def log_info(self, *args):
-        return self._log("info", self.__type__, self.__name__, args)
+    def log_info(self, *args, **kwargs):
+        self._log("info", self.__type__, self.__name__, args)
+        if self.pyload.debug and kwargs.get('trace'):
+            self.print_exc()
 
 
-    def log_warning(self, *args):
-        return self._log("warning", self.__type__, self.__name__, args)
+    def log_warning(self, *args, **kwargs):
+        self._log("warning", self.__type__, self.__name__, args)
+        if self.pyload.debug and kwargs.get('trace'):
+            self.print_exc()
 
 
-    def log_error(self, *args):
-        return self._log("error", self.__type__, self.__name__, args)
+    def log_error(self, *args, **kwargs):
+        self._log("error", self.__type__, self.__name__, args)
+        if self.pyload.debug and kwargs.get('trace', True):
+            self.print_exc()
 
 
-    def log_critical(self, *args):
-        return self._log("critical", self.__type__, self.__name__, args)
+    def log_critical(self, *args, **kwargs):
+        self._log("critical", self.__type__, self.__name__, args)
+        if kwargs.get('trace', True):
+            self.print_exc()
+
+
+    def print_exc(self):
+        frame = inspect.currentframe()
+        print format_exc(frame.f_back)
+        del frame
 
 
     def set_permissions(self, path):
@@ -225,7 +120,7 @@ class Plugin(object):
             self.log_warning(_("Setting path mode failed"), e)
 
         try:
-            if os.name != "nt" and self.pyload.config.get("permission", "change_dl"):
+            if os.name is not "nt" and self.pyload.config.get("permission", "change_dl"):
                 uid = pwd.getpwnam(self.pyload.config.get("permission", "user"))[2]
                 gid = grp.getgrnam(self.pyload.config.get("permission", "group"))[2]
                 os.chown(path, uid, gid)
@@ -234,13 +129,7 @@ class Plugin(object):
             self.log_warning(_("Setting owner and group failed"), e)
 
 
-    def get_chunk_count(self):
-        if self.chunk_limit <= 0:
-            return self.pyload.config.get("download", "chunks")
-        return min(self.pyload.config.get("download", "chunks"), self.chunk_limit)
-
-
-    def set_config(self, option, value):
+    def set_config(self, option, value, plugin=None):
         """
         Set config value for current plugin
 
@@ -248,7 +137,7 @@ class Plugin(object):
         :param value:
         :return:
         """
-        self.pyload.config.setPlugin(self.__name__, option, value)
+        self.pyload.api.setConfigValue(plugin or self.classname, option, value, section="plugin")
 
 
     def get_config(self, option, default="", plugin=None):
@@ -259,7 +148,7 @@ class Plugin(object):
         :return:
         """
         try:
-            return self.pyload.config.getPlugin(plugin or self.__name__, option)
+            return self.pyload.config.getPlugin(plugin or self.classname, option)
 
         except KeyError:
             self.log_debug("Config option `%s` not found, use default `%s`" % (option, default or None))  #@TODO: Restore to `log_warning` in 0.4.10
@@ -270,42 +159,47 @@ class Plugin(object):
         """
         Saves a value persistently to the database
         """
-        self.pyload.db.setStorage(self.__name__, key, value)
+        value = map(decode, value) if isiterable(value) else decode(value)
+        entry = json.dumps(value).encode('base64')
+        self.pyload.db.setStorage(self.classname, key, entry)
 
 
-    def retrieve(self, key, default=None):
+    def retrieve(self, key=None, default=None):
         """
         Retrieves saved value or dict of all saved entries if key is None
         """
-        return self.pyload.db.getStorage(self.__name__, key) or default
+        entry = self.pyload.db.getStorage(self.classname, key)
+
+        if key:
+            if entry is None:
+                value = default
+            else:
+                value = json.loads(entry.decode('base64'))
+        else:
+            if not entry:
+                value = default
+            else:
+                value = dict((k, json.loads(v.decode('base64'))) for k, v in value.items())
+
+        return value
 
 
     def delete(self, key):
         """
         Delete entry in db
         """
-        self.pyload.db.delStorage(self.__name__, key)
+        self.pyload.db.delStorage(self.classname, key)
 
 
-    def fail(self, reason):
+    def fail(self, msg):
         """
-        Fail and give reason
+        Fail and give msg
         """
-        raise Fail(encode(reason))  #@TODO: Remove `encode` in 0.4.10
-
-
-    def error(self, reason="", type=_("Parse")):
-        if not reason:
-            type = _("Unknown")
-
-        msg  = _("%s error") % type.strip().capitalize() if type else _("Error")
-        msg += (": %s" % reason.strip()) if reason else ""
-        msg += _(" | Plugin may be out of date")
-
         raise Fail(encode(msg))  #@TODO: Remove `encode` in 0.4.10
 
 
-    def load(self, url, get={}, post={}, ref=True, cookies=True, just_header=False, decode=True, multipart=False, req=None):
+    def load(self, url, get={}, post={}, ref=True, cookies=True, just_header=False, decode=True,
+             multipart=False, redirect=True, req=None):
         """
         Load content at url and returns it
 
@@ -318,82 +212,104 @@ class Plugin(object):
         :param decode: Wether to decode the output according to http header, should be True in most cases
         :return: Loaded content
         """
-        if hasattr(self, 'pyfile') and self.pyfile.abort:
-            self.abort()
-
-        url = fixurl(url)
-
-        if not url or not isinstance(url, basestring):
-            self.fail(_("No url given"))
-
         if self.pyload.debug:
             self.log_debug("LOAD URL " + url,
-                           *["%s=%s" % (key, val) for key, val in locals().items() if key not in ("self", "url")])
+                           *["%s=%s" % (key, val) for key, val in locals().items() if key not in ("self", "url", "_[1]")])
+
+        url = fixurl(url, unquote=True)  #: Recheck in 0.4.10
 
         if req is None:
-            req = self.req or self.pyload.requestFactory.getRequest(self.__name__)
+            req = self.req or self.pyload.requestFactory.getRequest(self.classname)
 
         #@TODO: Move to network in 0.4.10
         if isinstance(cookies, list):
             set_cookies(req.cj, cookies)
 
-        res = req.load(url, get, post, ref, bool(cookies), just_header, multipart, decode is True)  #@TODO: Fix network multipart in 0.4.10
+        #@TODO: Move to network in 0.4.10
+        if not redirect:
+            req.http.c.setopt(pycurl.FOLLOWLOCATION, 0)
+
+        elif type(redirect) is int:
+            req.http.c.setopt(pycurl.MAXREDIRS, redirect)
+
+        html = req.load(url, get, post, ref, bool(cookies), just_header, multipart, decode is True)  #@TODO: Fix network multipart in 0.4.10
+
+        #@TODO: Move to network in 0.4.10
+        if not redirect:
+            req.http.c.setopt(pycurl.FOLLOWLOCATION, 1)
+
+        elif type(redirect) is int:
+            maxredirs = self.get_config("maxredirs", default=5, plugin="UserAgentSwitcher")
+            req.http.c.setopt(pycurl.MAXREDIRS, maxredirs)
 
         #@TODO: Move to network in 0.4.10
         if decode:
-            res = html_unescape(res)
+            html = html_unescape(html)
 
         #@TODO: Move to network in 0.4.10
         if isinstance(decode, basestring):
-            res = decode(res, decode)
+            html = utils.decode(html, decode)
+
+        self.last_html = html
 
         if self.pyload.debug:
             frame = inspect.currentframe()
-            framefile = fs_join("tmp", self.__name__, "%s_line%s.dump.html" % (frame.f_back.f_code.co_name, frame.f_back.f_lineno))
+
             try:
-                if not exists(os.path.join("tmp", self.__name__)):
-                    os.makedirs(os.path.join("tmp", self.__name__))
+                framefile = fs_join("tmp", self.classname, "%s_line%s.dump.html" %
+                                    (frame.f_back.f_code.co_name, frame.f_back.f_lineno))
+
+                if not exists(os.path.join("tmp", self.classname)):
+                    os.makedirs(os.path.join("tmp", self.classname))
 
                 with open(framefile, "wb") as f:
-                    del frame  #: Delete the frame or it wont be cleaned
-                    f.write(encode(res))
+                    f.write(encode(html))
 
             except IOError, e:
                 self.log_error(e)
 
-        if just_header:
-            #: Parse header
+            finally:
+                del frame  #: Delete the frame or it wont be cleaned
+
+        if not just_header:
+            return html
+
+        else:
+            #@TODO: Move to network in 0.4.10
             header = {'code': req.code}
-            for line in res.splitlines():
+
+            for line in html.splitlines():
                 line = line.strip()
                 if not line or ":" not in line:
                     continue
 
                 key, none, value = line.partition(":")
-                key = key.strip().lower()
+
+                key   = key.strip().lower()
                 value = value.strip()
 
                 if key in header:
-                    if type(header[key]) is list:
-                        header[key].append(value)
+                    header_key = header.get(key)
+                    if type(header_key) is list:
+                        header_key.append(value)
                     else:
-                        header[key] = [header[key], value]
+                        header[key] = [header_key, value]
                 else:
                     header[key] = value
-            res = header
 
-        return res
+            return header
 
 
     def clean(self):
         """
-        Clean everything and remove references
+        Remove references
         """
         try:
+            self.req.clearCookies()
             self.req.close()
+
         except Exception:
             pass
 
-        for a in ("pyfile", "thread", "html", "req"):
-            if hasattr(self, a):
-                setattr(self, a, None)
+        else:
+            self.req = None

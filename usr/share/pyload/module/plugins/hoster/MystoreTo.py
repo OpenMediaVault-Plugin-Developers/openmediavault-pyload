@@ -11,15 +11,19 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class MystoreTo(SimpleHoster):
     __name__    = "MystoreTo"
     __type__    = "hoster"
-    __version__ = "0.04"
+    __version__ = "0.06"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?mystore\.to/dl/.+'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Mystore.to hoster plugin"""
     __license__     = "GPLv3"
-    __authors__     = [("zapp-brannigan", "")]
+    __authors__     = [("zapp-brannigan", "fuerst.reinje@web.de")]
 
 
     NAME_PATTERN    = r'<h1>(?P<N>.+?)<'
@@ -35,7 +39,7 @@ class MystoreTo(SimpleHoster):
 
     def handle_free(self, pyfile):
         try:
-            fid = re.search(r'wert="(.+?)"', self.html).group(1)
+            fid = re.search(r'wert="(.+?)"', self.data).group(1)
 
         except AttributeError:
             self.error(_("File-ID not found"))

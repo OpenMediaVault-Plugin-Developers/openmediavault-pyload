@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import re
-import urlparse
 
 from module.plugins.internal.SimpleCrypter import SimpleCrypter, create_getInfo
 
@@ -9,12 +8,15 @@ from module.plugins.internal.SimpleCrypter import SimpleCrypter, create_getInfo
 class UploadedToFolder(SimpleCrypter):
     __name__    = "UploadedToFolder"
     __type__    = "crypter"
-    __version__ = "0.44"
+    __version__ = "0.47"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?(uploaded|ul)\.(to|net)/(f|folder|list)/\w+'
-    __config__  = [("use_subfolder"     , "bool", "Save package to subfolder"          , True),
-                   ("subfolder_per_pack", "bool", "Create a subfolder for each package", True)]
+    __config__  = [("activated"            , "bool", "Activated"                                        , True),
+                   ("use_premium"          , "bool", "Use premium account if available"                 , True),
+                   ("use_subfolder"        , "bool", "Save package to subfolder"                        , True),
+                   ("subfolder_per_package", "bool", "Create a subfolder for each package"              , True),
+                   ("max_wait"             , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """UploadedTo decrypter plugin"""
     __license__     = "GPLv3"

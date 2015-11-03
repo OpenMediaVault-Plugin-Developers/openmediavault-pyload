@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import re
-import urlparse
 
 from module.network.RequestFactory import getURL as get_url
 from module.plugins.internal.SimpleHoster import SimpleHoster, parse_fileInfo
@@ -11,20 +10,26 @@ def get_info(urls):
     for url in urls:
         h = get_url(url, just_header=True)
         m = re.search(r'Location: (.+)\r\n', h)
+
         if m and not re.match(m.group(1), FilefactoryCom.__pattern__):  #: It's a direct link! Skipping
             yield (url, 0, 3, url)
-        else:  #: It's a standard html page
+        else:
+            #: It's a standard html page
             yield parse_fileInfo(FilefactoryCom, url, get_url(url))
 
 
 class FilefactoryCom(SimpleHoster):
     __name__    = "FilefactoryCom"
     __type__    = "hoster"
-    __version__ = "0.57"
+    __version__ = "0.61"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?filefactory\.com/(file|trafficshare/\w+)/\w+'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Filefactory.com hoster plugin"""
     __license__     = "GPLv3"
@@ -44,43 +49,33 @@ class FilefactoryCom(SimpleHoster):
 
 
     def handle_free(self, pyfile):
-        if "Currently only Premium Members can download files larger than" in self.html:
+        if "Currently only Premium Members can download files larger than" in self.data:
             self.fail(_("File too large for free download"))
-        elif "All free download slots on this server are currently in use" in self.html:
+        elif "All free download slots on this server are currently in use" in self.data:
             self.retry(50, 15 * 60, _("All free slots are busy"))
 
-        m = re.search(self.LINK_FREE_PATTERN, self.html)
+        m = re.search(self.LINK_FREE_PATTERN, self.data)
         if m is None:
-            self.error(_("Free download link not found"))
+            return
 
         self.link = m.group(1)
 
-        m = re.search(self.WAIT_PATTERN, self.html)
-        if m:
+        m = re.search(self.WAIT_PATTERN, self.data)
+        if m is not None:
             self.wait(m.group(1))
 
 
-    def check_file(self):
-        check = self.check_download({'multiple': "You are currently downloading too many files at once.",
-                                    'error'   : '<div id="errorMessage">'})
+    def check_download(self):
+        check = self.check_file({
+            'multiple': "You are currently downloading too many files at once.",
+            'error'   : '<div id="errorMessage">'
+        })
 
         if check == "multiple":
             self.log_debug("Parallel downloads detected; waiting 15 minutes")
-            self.retry(wait_time=15 * 60, reason=_("Parallel downloads"))
+            self.retry(wait=15 * 60, msg=_("Parallel downloads"))
 
         elif check == "error":
             self.error(_("Unknown error"))
 
-        return super(FilefactoryCom, self).check_file()
-
-
-    def handle_premium(self, pyfile):
-        self.link = self.direct_link(self.load(pyfile.url, just_header=True))
-
-        if not self.link:
-            html = self.load(pyfile.url)
-            m = re.search(self.LINK_PREMIUM_PATTERN, html)
-            if m:
-                self.link = m.group(1)
-            else:
-                self.error(_("Premium download link not found"))
+        return super(FilefactoryCom, self).check_download()

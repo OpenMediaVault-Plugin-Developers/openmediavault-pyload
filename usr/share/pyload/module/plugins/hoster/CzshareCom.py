@@ -6,17 +6,21 @@
 import re
 
 from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
-from module.utils import parseFileSize as parse_size
+from module.plugins.internal.utils import parse_size
 
 
 class CzshareCom(SimpleHoster):
     __name__    = "CzshareCom"
     __type__    = "hoster"
-    __version__ = "1.02"
+    __version__ = "1.07"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?(czshare|sdilej)\.(com|cz)/(\d+/|download\.php\?).+'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """CZshare.com hoster plugin, now Sdilej.cz"""
     __license__     = "GPLv3"
@@ -40,13 +44,13 @@ class CzshareCom(SimpleHoster):
     USER_CREDIT_PATTERN  = r'<div class="credit">\s*kredit: <strong>([\d .,]+)(\w+)</strong>\s*</div><!-- .credit -->'
 
 
-    def check_traffic_left(self):
+    def check_traffic(self):
         #: Check if user logged in
-        m = re.search(self.USER_CREDIT_PATTERN, self.html)
+        m = re.search(self.USER_CREDIT_PATTERN, self.data)
         if m is None:
-            self.account.relogin(self.user)
-            self.html = self.load(self.pyfile.url)
-            m = re.search(self.USER_CREDIT_PATTERN, self.html)
+            self.account.relogin()
+            self.data = self.load(self.pyfile.url)
+            m = re.search(self.USER_CREDIT_PATTERN, self.data)
             if m is None:
                 return False
 
@@ -54,25 +58,26 @@ class CzshareCom(SimpleHoster):
         try:
             credit = parse_size(m.group(1).replace(' ', ''), m.group(2))
             self.log_info(_("Premium download for %i KiB of Credit") % (self.pyfile.size / 1024))
-            self.log_info(_("User %s has %i KiB left") % (self.user, credit / 1024))
+            self.log_info(_("User %s has %i KiB left") % (self.account.user, credit / 1024))
             if credit < self.pyfile.size:
                 self.log_info(_("Not enough credit to download file: %s") % self.pyfile.name)
                 return False
+
         except Exception, e:
             #: let's continue and see what happens...
-            self.log_error(e)
+            self.log_error(e, trace=True)
 
         return True
 
 
     def handle_premium(self, pyfile):
-    #: Parse download link
         try:
-            form = re.search(self.PREMIUM_FORM_PATTERN, self.html, re.S).group(1)
+            form = re.search(self.PREMIUM_FORM_PATTERN, self.data, re.S).group(1)
             inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
+
         except Exception, e:
-            self.log_error(e)
-            self.restart(nopremium=True)
+            self.log_error(e, trace=True)
+            self.restart(premium=False)
 
         #: Download the file, destination is determined by pyLoad
         self.download("http://sdilej.cz/profi_down.php", post=inputs, disposition=True)
@@ -80,7 +85,7 @@ class CzshareCom(SimpleHoster):
 
     def handle_free(self, pyfile):
         #: Get free url
-        m = re.search(self.FREE_URL_PATTERN, self.html)
+        m = re.search(self.FREE_URL_PATTERN, self.data)
         if m is None:
             self.error(_("FREE_URL_PATTERN not found"))
 
@@ -89,38 +94,34 @@ class CzshareCom(SimpleHoster):
         self.log_debug("PARSED_URL:" + parsed_url)
 
         #: Get download ticket and parse html
-        self.html = self.load(parsed_url)
-        if re.search(self.MULTIDL_PATTERN, self.html):
+        self.data = self.load(parsed_url)
+        if re.search(self.MULTIDL_PATTERN, self.data):
             self.wait(5 * 60, 12, _("Download limit reached"))
 
         try:
-            form = re.search(self.FREE_FORM_PATTERN, self.html, re.S).group(1)
+            form = re.search(self.FREE_FORM_PATTERN, self.data, re.S).group(1)
             inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
             pyfile.size = int(inputs['size'])
 
         except Exception, e:
-            self.log_error(e)
+            self.log_error(e, trace=True)
             self.error(_("Form"))
 
         #: Get and decrypt captcha
         captcha_url = 'http://sdilej.cz/captcha.php'
-        for _i in xrange(5):
-            inputs['captchastring2'] = self.captcha.decrypt(captcha_url)
-            self.html = self.load(parsed_url, post=inputs)
+        inputs['captchastring2'] = self.captcha.decrypt(captcha_url)
+        self.data = self.load(parsed_url, post=inputs)
 
-            if u"<li>Zadaný ověřovací kód nesouhlasí!</li>" in self.html:
-                self.captcha.invalid()
+        if u"<li>Zadaný ověřovací kód nesouhlasí!</li>" in self.data:
+            self.retry_captcha()
 
-            elif re.search(self.MULTIDL_PATTERN, self.html):
-                self.wait(5 * 60, 12, _("Download limit reached"))
+        elif re.search(self.MULTIDL_PATTERN, self.data):
+            self.wait(5 * 60, 12, _("Download limit reached"))
 
-            else:
-                self.captcha.correct()
-                break
         else:
-            self.fail(_("No valid captcha code entered"))
+            self.captcha.correct()
 
-        m = re.search("countdown_number = (\d+);", self.html)
+        m = re.search("countdown_number = (\d+);", self.data)
         self.set_wait(int(m.group(1)) if m else 50)
 
         #: Download the file, destination is determined by pyLoad
@@ -135,9 +136,9 @@ class CzshareCom(SimpleHoster):
         self.wait()
 
 
-    def check_file(self):
+    def check_download(self):
         #: Check download
-        check = self.check_download({
+        check = self.check_file({
             "temp offline" : re.compile(r"^Soubor je do.*asn.* nedostupn.*$"),
             'credit'       : re.compile(r"^Nem.*te dostate.*n.* kredit.$"),
             "multi-dl"     : re.compile(self.MULTIDL_PATTERN),
@@ -148,16 +149,15 @@ class CzshareCom(SimpleHoster):
             self.fail(_("File not available - try later"))
 
         elif check == "credit":
-            self.restart(nopremium=True)
+            self.restart(premium=False)
 
         elif check == "multi-dl":
             self.wait(5 * 60, 12, _("Download limit reached"))
 
         elif check == "captcha":
-            self.captcha.invalid()
-            self.retry()
+            self.retry_captcha()
 
-        return super(CzshareCom, self).check_file()
+        return super(CzshareCom, self).check_download()
 
 
 getInfo = create_getInfo(CzshareCom)

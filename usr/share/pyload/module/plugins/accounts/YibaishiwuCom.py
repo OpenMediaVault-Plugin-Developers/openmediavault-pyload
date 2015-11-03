@@ -8,7 +8,7 @@ from module.plugins.internal.Account import Account
 class YibaishiwuCom(Account):
     __name__    = "YibaishiwuCom"
     __type__    = "account"
-    __version__ = "0.04"
+    __version__ = "0.07"
     __status__  = "testing"
 
     __description__ = """115.com account plugin"""
@@ -19,8 +19,7 @@ class YibaishiwuCom(Account):
     ACCOUNT_INFO_PATTERN = r'var USER_PERMISSION = {(.*?)}'
 
 
-    def parse_info(self, user, password, data, req):
-        # self.relogin(user)
+    def grab_info(self, user, password, data):
         html = self.load("http://115.com/")
 
         m = re.search(self.ACCOUNT_INFO_PATTERN, html, re.S)
@@ -29,7 +28,7 @@ class YibaishiwuCom(Account):
         return dict({'validuntil': validuntil, 'trafficleft': trafficleft, 'premium': premium})
 
 
-    def login(self, user, password, data, req):
+    def signin(self, user, password, data):
         html = self.load("https://passport.115.com/?ac=login",
                          post={'back'          : "http://www.115.com/",
                                'goto'          : "http://115.com/",
@@ -37,4 +36,4 @@ class YibaishiwuCom(Account):
                                "login[passwd]" : password})
 
         if not 'var USER_PERMISSION = {' in html:
-            self.login_fail()
+            self.fail_login()

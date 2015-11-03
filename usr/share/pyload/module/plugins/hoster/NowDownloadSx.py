@@ -3,17 +3,20 @@
 import re
 
 from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
-from module.utils import fixup
 
 
 class NowDownloadSx(SimpleHoster):
     __name__    = "NowDownloadSx"
     __type__    = "hoster"
-    __version__ = "0.11"
+    __version__ = "0.13"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?(nowdownload\.[a-zA-Z]{2,}/(dl/|download\.php.+?id=|mobile/(#/files/|.+?id=))|likeupload\.org/)\w+'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """NowDownload.sx hoster plugin"""
     __license__     = "GPLv3"
@@ -29,7 +32,7 @@ class NowDownloadSx(SimpleHoster):
     WAIT_PATTERN = r'\.countdown\(\{until: \+(\d+),'
     LINK_FREE_PATTERN = r'(http://s\d+(?:\.coolcdn\.info|\.mighycdndelivery\.com)/nowdownload/.+?)["\']'
 
-    NAME_REPLACEMENTS = [("&#?\w+;", fixup), (r'<.*?>', '')]
+    NAME_REPLACEMENTS = [(r'<.*?>', '')]
 
 
     def setup(self):
@@ -39,28 +42,26 @@ class NowDownloadSx(SimpleHoster):
 
 
     def handle_free(self, pyfile):
-        tokenlink = re.search(self.TOKEN_PATTERN, self.html)
-        continuelink = re.search(self.CONTINUE_PATTERN, self.html)
+        tokenlink = re.search(self.TOKEN_PATTERN, self.data)
+        continuelink = re.search(self.CONTINUE_PATTERN, self.data)
         if tokenlink is None or continuelink is None:
             self.error()
 
-        m = re.search(self.WAIT_PATTERN, self.html)
-        if m:
+        m = re.search(self.WAIT_PATTERN, self.data)
+        if m is not None:
             wait = int(m.group(1))
         else:
             wait = 60
 
         baseurl = "http://www.nowdownload.ch"
-        self.html = self.load(baseurl + str(tokenlink.group(1)))
+        self.data = self.load(baseurl + str(tokenlink.group(1)))
         self.wait(wait)
 
-        self.html = self.load(baseurl + str(continuelink.group(1)))
+        self.data = self.load(baseurl + str(continuelink.group(1)))
 
-        m = re.search(self.LINK_FREE_PATTERN, self.html)
-        if m is None:
-            self.error(_("Download link not found"))
-
-        self.link = m.group(1)
+        m = re.search(self.LINK_FREE_PATTERN, self.data)
+        if m is not None:
+            self.link = m.group(1)
 
 
 getInfo = create_getInfo(NowDownloadSx)

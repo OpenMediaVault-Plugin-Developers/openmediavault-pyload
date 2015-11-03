@@ -9,11 +9,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster
 class NitroflareCom(SimpleHoster):
     __name__    = "NitroflareCom"
     __type__    = "hoster"
-    __version__ = "0.15"
+    __version__ = "0.17"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?nitroflare\.com/view/(?P<ID>[\w^_]+)'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Nitroflare.com hoster plugin"""
     __license__     = "GPLv3"
@@ -37,7 +41,7 @@ class NitroflareCom(SimpleHoster):
         self.load(pyfile.url, post={'goToFreePage': ""})
 
         self.load("http://nitroflare.com/ajax/setCookie.php", post={'fileId': self.info['pattern']['ID']})
-        self.html = self.load("http://nitroflare.com/ajax/freeDownload.php",
+        self.data = self.load("http://nitroflare.com/ajax/freeDownload.php",
                               post={'method': "startTimer", 'fileId': self.info['pattern']['ID']})
 
         self.check_errors()
@@ -55,7 +59,7 @@ class NitroflareCom(SimpleHoster):
         recaptcha = ReCaptcha(self)
         response, challenge = recaptcha.challenge(self.RECAPTCHA_KEY)
 
-        self.html = self.load("http://nitroflare.com/ajax/freeDownload.php",
+        self.data = self.load("http://nitroflare.com/ajax/freeDownload.php",
                               post={'method'                   : "fetchDownload",
                                     'recaptcha_challenge_field': challenge,
                                     'recaptcha_response_field' : response})

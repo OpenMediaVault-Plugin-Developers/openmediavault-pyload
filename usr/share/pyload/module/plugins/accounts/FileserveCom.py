@@ -3,13 +3,13 @@
 import time
 
 from module.plugins.internal.Account import Account
-from module.common.json_layer import json_loads
+from module.plugins.internal.utils import json
 
 
 class FileserveCom(Account):
     __name__    = "FileserveCom"
     __type__    = "account"
-    __version__ = "0.22"
+    __version__ = "0.25"
     __status__  = "testing"
 
     __description__ = """Fileserve.com account plugin"""
@@ -17,14 +17,12 @@ class FileserveCom(Account):
     __authors__     = [("mkaay", "mkaay@mkaay.de")]
 
 
-    def parse_info(self, user, password, data, req):
-        data = self.get_data(user)
-
+    def grab_info(self, user, password, data):
         html = self.load("http://app.fileserve.com/api/login/",
                          post={'username': user,
                                'password': password,
                                'submit': "Submit+Query"})
-        res = json_loads(html)
+        res = json.loads(html)
 
         if res['type'] == "premium":
             validuntil = time.mktime(time.strptime(res['expireTime'], "%Y-%m-%d %H:%M:%S"))
@@ -33,15 +31,15 @@ class FileserveCom(Account):
             return {'premium': False, 'trafficleft': None, 'validuntil': None}
 
 
-    def login(self, user, password, data, req):
+    def signin(self, user, password, data):
         html = self.load("http://app.fileserve.com/api/login/",
                          post={'username': user,
                                'password': password,
                                'submit'  : "Submit+Query"})
-        res = json_loads(html)
+        res = json.loads(html)
 
         if not res['type']:
-            self.login_fail()
+            self.fail_login()
 
         #: Login at fileserv html
         self.load("http://www.fileserve.com/login.php",

@@ -2,7 +2,6 @@
 
 import re
 import urllib
-import urlparse
 
 from types import MethodType
 
@@ -13,22 +12,16 @@ from module.plugins.internal.Addon import Addon
 class SkipRev(Addon):
     __name__    = "SkipRev"
     __type__    = "hook"
-    __version__ = "0.33"
+    __version__ = "0.35"
     __status__  = "testing"
 
-    __config__ = [("mode"     , "Auto;Manual", "Choose recovery archives to skip"               , "Auto"),
+    __config__ = [("activated", "bool"       , "Activated"                                      , False ),
+                  ("mode"     , "Auto;Manual", "Choose recovery archives to skip"               , "Auto"),
                   ("revtokeep", "int"        , "Number of recovery archives to keep for package", 0     )]
 
     __description__ = """Skip recovery archives (.rev)"""
     __license__     = "GPLv3"
     __authors__     = [("Walter Purcaro", "vuolter@gmail.com")]
-
-
-    @staticmethod
-    def _init(self):
-        self.pyfile.plugin._init()
-        if self.pyfile.hasStatus("skipped"):
-            self.skip(self.pyfile.statusname or self.pyfile.pluginname)
 
 
     def _name(self, pyfile):
@@ -68,11 +61,6 @@ class SkipRev(Addon):
 
         pyfile.setCustomStatus("SkipRev", "skipped")
 
-        if not hasattr(pyfile.plugin, "_init"):
-            #: Work-around: inject status checker inside the preprocessing routine of the plugin
-            pyfile.plugin._init = pyfile.plugin.init
-            pyfile.plugin.init  = MethodType(self._init, pyfile.plugin)
-
 
     def download_failed(self, pyfile):
         #: Check if pyfile is still "failed", maybe might has been restarted in meantime
@@ -87,7 +75,7 @@ class SkipRev(Addon):
         pyname = re.compile(r'%s\.part\d+\.rev$' % pyfile.name.rsplit('.', 2)[0].replace('.', '\.'))
 
         for link in self.pyload.api.getPackageData(pyfile.package().id).links:
-            if link.status == 4 and pyname.match(link.name):
+            if link.status is 4 and pyname.match(link.name):
                 pylink = self._pyfile(link)
 
                 if revtokeep > -1 or pyfile.name.endswith(".rev"):

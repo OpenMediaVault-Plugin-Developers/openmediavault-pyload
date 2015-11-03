@@ -9,11 +9,15 @@ from module.plugins.captcha.ReCaptcha import ReCaptcha
 class CatShareNet(SimpleHoster):
     __name__    = "CatShareNet"
     __type__    = "hoster"
-    __version__ = "0.16"
+    __version__ = "0.19"
     __status__  = "testing"
 
-    __pattern__ = r'http://(?:www\.)?catshare\.net/\w{16}'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __pattern__ = r'http://(?:www\.)?catshare\.net/\w{15,16}'
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """CatShare.net hoster plugin"""
     __license__     = "GPLv3"
@@ -41,12 +45,12 @@ class CatShareNet(SimpleHoster):
         recaptcha = ReCaptcha(self)
 
         response, challenge = recaptcha.challenge()
-        self.html = self.load(pyfile.url,
+        self.data = self.load(pyfile.url,
                               post={'recaptcha_challenge_field': challenge,
                                     'recaptcha_response_field' : response})
 
-        m = re.search(self.LINK_FREE_PATTERN, self.html)
-        if m:
+        m = re.search(self.LINK_FREE_PATTERN, self.data)
+        if m is not None:
             self.link = m.group(1)
 
 

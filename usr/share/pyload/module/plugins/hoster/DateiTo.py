@@ -9,11 +9,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class DateiTo(SimpleHoster):
     __name__    = "DateiTo"
     __type__    = "hoster"
-    __version__ = "0.10"
+    __version__ = "0.12"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?datei\.to/datei/(?P<ID>\w+)\.html'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Datei.to hoster plugin"""
     __license__     = "GPLv3"
@@ -35,9 +39,9 @@ class DateiTo(SimpleHoster):
         data = {'P': 'I', 'ID': self.info['pattern']['ID']}
         recaptcha = ReCaptcha(self)
 
-        for _i in xrange(10):
+        for _i in xrange(3):
             self.log_debug("URL", url, "POST", data)
-            self.html = self.load(url, post=data)
+            self.data = self.load(url, post=data)
             self.check_errors()
 
             if url.endswith('download.php') and 'P' in data:
@@ -47,22 +51,23 @@ class DateiTo(SimpleHoster):
                 elif data['P'] == "IV":
                     break
 
-            m = re.search(self.DATA_PATTERN, self.html)
+            m = re.search(self.DATA_PATTERN, self.data)
             if m is None:
-                self.error(_("data"))
+                self.error(_("Data pattern not found"))
+
             url = 'http://datei.to/' + m.group(1)
             data = dict(x.split('=') for x in m.group(2).split('&'))
 
             if url.endswith('recaptcha.php'):
                 data['recaptcha_response_field'], data['recaptcha_challenge_field'] = recaptcha.challenge()
         else:
-            self.fail(_("Too bad..."))
+            return
 
-        self.link = self.html
+        self.link = self.data
 
 
     def do_wait(self):
-        m = re.search(self.WAIT_PATTERN, self.html)
+        m = re.search(self.WAIT_PATTERN, self.data)
         wait_time = int(m.group(1)) if m else 30
 
         self.load('http://datei.to/ajax/download.php', post={'P': 'Ads'})

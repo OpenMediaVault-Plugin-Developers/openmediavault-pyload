@@ -9,11 +9,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class QuickshareCz(SimpleHoster):
     __name__    = "QuickshareCz"
     __type__    = "hoster"
-    __version__ = "0.57"
+    __version__ = "0.60"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:[^/]*\.)?quickshare\.cz/stahnout-soubor/.+'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Quickshare.cz hoster plugin"""
     __license__     = "GPLv3"
@@ -26,11 +30,11 @@ class QuickshareCz(SimpleHoster):
 
 
     def process(self, pyfile):
-        self.html = self.load(pyfile.url)
+        self.data = self.load(pyfile.url)
         self.get_fileInfo()
 
         #: Parse js variables
-        self.jsvars = dict((x, y.strip("'")) for x, y in re.findall(r"var (\w+) = ([\d.]+|'.+?')", self.html))
+        self.jsvars = dict((x, y.strip("'")) for x, y in re.findall(r"var (\w+) = ([\d.]+|'.+?')", self.data))
         self.log_debug(self.jsvars)
         pyfile.name = self.jsvars['ID3']
 
@@ -39,7 +43,7 @@ class QuickshareCz(SimpleHoster):
             if 'UU_prihlasen' in self.jsvars:
                 if self.jsvars['UU_prihlasen'] == "0":
                     self.log_warning(_("User not logged in"))
-                    self.relogin(self.user)
+                    self.relogin()
                     self.retry()
                 elif float(self.jsvars['UU_kredit']) < float(self.jsvars['kredit_odecet']):
                     self.log_warning(_("Not enough credit left"))
@@ -50,7 +54,7 @@ class QuickshareCz(SimpleHoster):
         else:
             self.handle_free(pyfile)
 
-        if self.check_download({'error': re.compile(r"\AChyba!")}, max_size=100):
+        if self.check_file({'error': re.compile(r"\AChyba!")}, max_size=100):
             self.fail(_("File not m or plugin defect"))
 
 
@@ -60,21 +64,18 @@ class QuickshareCz(SimpleHoster):
         data = dict((x, self.jsvars[x]) for x in self.jsvars if x in ("ID1", "ID2", "ID3", "ID4"))
         self.log_debug("FREE URL1:" + download_url, data)
 
-        self.req.http.c.setopt(pycurl.FOLLOWLOCATION, 0)
-        self.load(download_url, post=data)
-        self.header = self.req.http.header
-        self.req.http.c.setopt(pycurl.FOLLOWLOCATION, 1)
+        header = self.load(download_url, post=data, just_header=True)
 
-        m = re.search(r'Location\s*:\s*(.+)', self.header, re.I)
-        if m is None:
-            self.fail(_("File not found"))
+        self.link = header.get('location')
+        if not self.link:
+            elf.fail(_("File not found"))
 
-        self.link = m.group(1).rstrip()  #@TODO: Remove .rstrip() in 0.4.10
+        self.link = m.group(1)
         self.log_debug("FREE URL2:" + self.link)
 
         #: Check errors
         m = re.search(r'/chyba/(\d+)', self.link)
-        if m:
+        if m is not None:
             if m.group(1) == "1":
                 self.retry(60, 2 * 60, "This IP is already downloading")
             elif m.group(1) == "2":

@@ -3,23 +3,24 @@
 import re
 import urlparse
 
-from module.common.json_layer import json_loads
-from module.plugins.internal.Crypter import Crypter
-from module.utils import save_join as fs_join
+from module.plugins.internal.Crypter import Crypter, create_getInfo
+from module.plugins.internal.utils import fs_join, json
 
 
 class YoutubeComFolder(Crypter):
     __name__    = "YoutubeComFolder"
     __type__    = "crypter"
-    __version__ = "1.03"
+    __version__ = "1.07"
     __status__  = "testing"
 
-    __pattern__ = r'https?://(?:www\.|m\.)?youtube\.com/(?P<TYPE>user|playlist|view_play_list)(/|.*?[?&](?:list|p)=)(?P<ID>[\w-]+)'
-    __config__  = [("use_subfolder"     , "bool", "Save package to subfolder"          , True ),
-                   ("subfolder_per_pack", "bool", "Create a subfolder for each package", True ),
-                   ("likes"             , "bool", "Grab user (channel) liked videos"   , False),
-                   ("favorites"         , "bool", "Grab user (channel) favorite videos", False),
-                   ("uploads"           , "bool", "Grab channel unplaylisted videos"   , True )]
+    __pattern__ = r'https?://(?:www\.|m\.)?youtube\.com/(?P<TYPE>user|playlist|view_play_list)(/|.*?[?&](?:list|p)=)(?P<ID>[\w\-]+)'
+    __config__  = [("activated"            , "bool", "Activated"                          , True ),
+                   ("use_premium"          , "bool", "Use premium account if available"   , True ),
+                   ("use_subfolder"        , "bool", "Save package to subfolder"          , True ),
+                   ("subfolder_per_package", "bool", "Create a subfolder for each package", True ),
+                   ("likes"                , "bool", "Grab user (channel) liked videos"   , False),
+                   ("favorites"            , "bool", "Grab user (channel) favorite videos", False),
+                   ("uploads"              , "bool", "Grab channel unplaylisted videos"   , True )]
 
     __description__ = """Youtube.com channel & playlist decrypter plugin"""
     __license__     = "GPLv3"
@@ -33,7 +34,7 @@ class YoutubeComFolder(Crypter):
         req.update({'key': self.API_KEY})
         url  = urlparse.urljoin("https://www.googleapis.com/youtube/v3/", ref)
         html = self.load(url, get=req)
-        return json_loads(html)
+        return json.loads(html)
 
 
     def get_channel(self, user):
@@ -108,7 +109,8 @@ class YoutubeComFolder(Crypter):
                 playlists = self.get_playlists(channel['id'])
                 self.log_debug("%s playlist\s found on channel \"%s\"" % (len(playlists), channel['title']))
 
-                relatedplaylist = {p_name: self.get_playlist(p_id) for p_name, p_id in channel['relatedPlaylists'].items()}
+                relatedplaylist = dict((p_name, self.get_playlist(p_id)) for p_name, p_id in channel['relatedPlaylists'].items())
+
                 self.log_debug("Channel's related playlists found = %s" % relatedplaylist.keys())
 
                 relatedplaylist['uploads']['title'] = "Unplaylisted videos"
@@ -146,3 +148,6 @@ class YoutubeComFolder(Crypter):
             self.packages.append((p_name, p_urls, p_folder))  #: Folder is NOT recognized by pyload 0.4.9!
 
             addedvideos.extend(p_videos)
+
+
+getInfo = create_getInfo(YoutubeComFolder)

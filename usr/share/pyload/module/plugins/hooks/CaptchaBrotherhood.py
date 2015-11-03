@@ -14,7 +14,7 @@ except ImportError:
     import Image
 
 from module.network.RequestFactory import getRequest as get_request
-from module.plugins.internal.Hook import Hook, threaded
+from module.plugins.internal.Addon import Addon, threaded
 
 
 class CaptchaBrotherhoodException(Exception):
@@ -35,15 +35,16 @@ class CaptchaBrotherhoodException(Exception):
         return "<CaptchaBrotherhoodException %s>" % self.err
 
 
-class CaptchaBrotherhood(Hook):
+class CaptchaBrotherhood(Addon):
     __name__    = "CaptchaBrotherhood"
     __type__    = "hook"
-    __version__ = "0.10"
+    __version__ = "0.11"
     __status__  = "testing"
 
-    __config__ = [("username"    , "str"     , "Username"                        , ""  ),
-                  ("password"    , "password", "Password"                        , ""  ),
-                  ("check_client", "bool"    , "Don't use if client is connected", True)]
+    __config__ = [("activated"   , "bool"    , "Activated"                       , False),
+                  ("username"    , "str"     , "Username"                        , ""   ),
+                  ("password"    , "password", "Password"                        , ""   ),
+                  ("check_client", "bool"    , "Don't use if client is connected", True )]
 
     __description__ = """Send captchas to CaptchaBrotherhood.com"""
     __license__     = "GPLv3"
@@ -79,6 +80,7 @@ class CaptchaBrotherhood(Hook):
                 img.save(output, "JPEG")
             data = output.getvalue()
             output.close()
+
         except Exception, e:
             raise CaptchaBrotherhoodException("Reading or converting captcha image failed: %s" % e)
 
@@ -98,6 +100,7 @@ class CaptchaBrotherhood(Hook):
         try:
             req.c.perform()
             res = req.getResponse()
+
         except Exception, e:
             raise CaptchaBrotherhoodException("Submit captcha image failed")
 
@@ -143,7 +146,7 @@ class CaptchaBrotherhood(Hook):
 
         if self.get_credits() > 10:
             task.handler.append(self)
-            task.data['service'] = self.__name__
+            task.data['service'] = self.classname
             task.setWaiting(100)
             self._process_captcha(task)
         else:
@@ -151,8 +154,8 @@ class CaptchaBrotherhood(Hook):
 
 
     def captcha_invalid(self, task):
-        if task.data['service'] is self.__name__ and "ticket" in task.data:
-            res = self.api_response("complainCaptcha", task.data['ticket'])
+        if task.data['service'] is self.classname and "ticket" in task.data:
+            self.api_response("complainCaptcha", task.data['ticket'])
 
 
     @threaded

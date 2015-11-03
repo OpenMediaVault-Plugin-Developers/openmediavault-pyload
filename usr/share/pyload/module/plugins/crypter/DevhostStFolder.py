@@ -12,13 +12,15 @@ from module.plugins.internal.SimpleCrypter import SimpleCrypter, create_getInfo
 class DevhostStFolder(SimpleCrypter):
     __name__    = "DevhostStFolder"
     __type__    = "crypter"
-    __version__ = "0.06"
+    __version__ = "0.09"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?d-h\.st/users/(?P<USER>\w+)(/\?fld_id=(?P<ID>\d+))?'
-    __config__  = [("use_premium"       , "bool", "Use premium account if available"   , True),
-                   ("use_subfolder"     , "bool", "Save package to subfolder"          , True),
-                   ("subfolder_per_pack", "bool", "Create a subfolder for each package", True)]
+    __config__  = [("activated"            , "bool", "Activated"                                        , True),
+                   ("use_premium"          , "bool", "Use premium account if available"                 , True),
+                   ("use_subfolder"        , "bool", "Save package to subfolder"                        , True),
+                   ("subfolder_per_package", "bool", "Create a subfolder for each package"              , True),
+                   ("max_wait"             , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """D-h.st folder decrypter plugin"""
     __license__     = "GPLv3"
@@ -33,7 +35,7 @@ class DevhostStFolder(SimpleCrypter):
     def check_name_size(self, getinfo=True):
         if not self.info or getinfo:
             self.log_debug("File info (BEFORE): %s" % self.info)
-            self.info.update(self.get_info(self.pyfile.url, self.html))
+            self.info.update(self.get_info(self.pyfile.url, self.data))
             self.log_debug("File info (AFTER): %s"  % self.info)
 
         try:
@@ -41,8 +43,8 @@ class DevhostStFolder(SimpleCrypter):
                 raise
 
             p = r'href="(.+?)">Back to \w+<'
-            m = re.search(p, self.html)
-            html = self.load(urlparse.urljoin("http://d-h.st", m.group(1)),
+            m = re.search(p, self.data)
+            html = self.load(urlparse.urljoin("http://d-h.st/", m.group(1)),
                              cookies=False)
 
             p = '\?fld_id=%s.*?">(.+?)<' % self.info['pattern']['ID']
@@ -50,7 +52,7 @@ class DevhostStFolder(SimpleCrypter):
             self.pyfile.name = m.group(1)
 
         except Exception, e:
-            self.log_debug(e)
+            self.log_debug(e, trace=True)
             self.pyfile.name = self.info['pattern']['USER']
 
         try:

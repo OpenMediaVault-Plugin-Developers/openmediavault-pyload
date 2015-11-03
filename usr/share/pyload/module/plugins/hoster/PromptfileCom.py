@@ -8,11 +8,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class PromptfileCom(SimpleHoster):
     __name__    = "PromptfileCom"
     __type__    = "hoster"
-    __version__ = "0.14"
+    __version__ = "0.16"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?promptfile\.com/'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Promptfile.com hoster plugin"""
     __license__     = "GPLv3"
@@ -28,7 +32,7 @@ class PromptfileCom(SimpleHoster):
 
     def handle_free(self, pyfile):
         #: STAGE 1: get link to continue
-        m = re.search(self.CHASH_PATTERN, self.html)
+        m = re.search(self.CHASH_PATTERN, self.data)
         if m is None:
             self.error(_("CHASH_PATTERN not found"))
 
@@ -36,7 +40,7 @@ class PromptfileCom(SimpleHoster):
         self.log_debug("Read chash %s" % chash)
 
         #: Continue to stage2
-        self.html = self.load(pyfile.url, post={'chash': chash})
+        self.data = self.load(pyfile.url, post={'chash': chash})
 
         #: STAGE 2: get the direct link
         return super(PromptfileCom, self).handle_free(pyfile)

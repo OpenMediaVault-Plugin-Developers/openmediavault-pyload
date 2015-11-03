@@ -3,16 +3,15 @@
 from module.plugins.internal.XFSAccount import XFSAccount
 
 
-class LinestorageCom(XFSAccount):
-    __name__    = "LinestorageCom"
+class CloudsharesNet(XFSAccount):
+    __name__    = "CloudsharesNet"
     __type__    = "account"
-    __version__ = "0.04"
+    __version__ = "0.01"
     __status__  = "testing"
 
-    __description__ = """Linestorage.com account plugin"""
+    __description__ = """Cloudshares.net account plugin"""
     __license__     = "GPLv3"
     __authors__     = [("Walter Purcaro", "vuolter@gmail.com")]
 
 
-    HOSTER_DOMAIN = "linestorage.com"
-    HOSTER_URL    = "http://linestorage.com/"
+    PLUGIN_DOMAIN = "cloudshares.net"

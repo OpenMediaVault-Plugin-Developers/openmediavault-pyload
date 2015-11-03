@@ -4,13 +4,13 @@ import re
 import time
 
 from module.plugins.internal.Account import Account
-from module.common.json_layer import json_loads
+from module.plugins.internal.utils import json
 
 
 class RapiduNet(Account):
     __name__    = "RapiduNet"
     __type__    = "account"
-    __version__ = "0.07"
+    __version__ = "0.10"
     __status__  = "testing"
 
     __description__ = """Rapidu.net account plugin"""
@@ -26,7 +26,7 @@ class RapiduNet(Account):
     TRAFFIC_LEFT_PATTERN = r'class="tipsyS"><b>(.+?)<'
 
 
-    def parse_info(self, user, password, data, req):
+    def grab_info(self, user, password, data):
         validuntil  = None
         trafficleft = -1
         premium     = False
@@ -37,30 +37,30 @@ class RapiduNet(Account):
             premium = True
 
         m = re.search(self.VALID_UNTIL_PATTERN, html)
-        if m:
+        if m is not None:
             validuntil = time.time() + (86400 * int(m.group(1)))
 
         m = re.search(self.TRAFFIC_LEFT_PATTERN, html)
-        if m:
+        if m is not None:
             trafficleft = self.parse_traffic(m.group(1))
 
         return {'validuntil': validuntil, 'trafficleft': trafficleft, 'premium': premium}
 
 
-    def login(self, user, password, data, req):
+    def signin(self, user, password, data):
         self.load("https://rapidu.net/ajax.php",
                   get={'a': "getChangeLang"},
                   post={'_go' : "",
                         'lang': "en"})
 
-        json = json_loads(self.load("https://rapidu.net/ajax.php",
+        jso = json.loads(self.load("https://rapidu.net/ajax.php",
                                     get={'a': "getUserLogin"},
                                     post={'_go'     : "",
                                           'login'   : user,
                                           'pass'    : password,
                                           'remember': "1"}))
 
-        self.log_debug(json)
+        self.log_debug(jso)
 
-        if not json['message'] == "success":
-            self.login_fail()
+        if jso['message'] != "success":
+            self.fail_login()

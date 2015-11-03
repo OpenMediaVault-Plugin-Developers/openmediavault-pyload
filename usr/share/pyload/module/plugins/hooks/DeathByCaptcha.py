@@ -8,10 +8,10 @@ import time
 
 from base64 import b64encode
 
-from module.common.json_layer import json_loads
+from module.plugins.internal.utils import json
 from module.network.HTTPRequest import BadHeader
 from module.network.RequestFactory import getRequest as get_request
-from module.plugins.internal.Hook import Hook, threaded
+from module.plugins.internal.Addon import Addon, threaded
 
 
 class DeathByCaptchaException(Exception):
@@ -48,15 +48,16 @@ class DeathByCaptchaException(Exception):
         return "<DeathByCaptchaException %s>" % self.err
 
 
-class DeathByCaptcha(Hook):
+class DeathByCaptcha(Addon):
     __name__    = "DeathByCaptcha"
     __type__    = "hook"
-    __version__ = "0.08"
+    __version__ = "0.10"
     __status__  = "testing"
 
-    __config__ = [("username"    , "str"     , "Username"                        , ""  ),
-                  ("password"    , "password", "Password"                        , ""  ),
-                  ("check_client", "bool"    , "Don't use if client is connected", True)]
+    __config__ = [("activated"   , "bool"    , "Activated"                       , False),
+                  ("username"    , "str"     , "Username"                        , ""   ),
+                  ("password"    , "password", "Password"                        , ""   ),
+                  ("check_client", "bool"    , "Don't use if client is connected", True )]
 
     __description__ = """Send captchas to DeathByCaptcha.com"""
     __license__     = "GPLv3"
@@ -79,13 +80,13 @@ class DeathByCaptcha(Hook):
 
         res = None
         try:
-            json = self.load("%s%s" % (self.API_URL, api),
+            html = self.load("%s%s" % (self.API_URL, api),
                              post=post,
                              multipart=multipart,
                              req=req)
 
-            self.log_debug(json)
-            res = json_loads(json)
+            self.log_debug(html)
+            res = json.loads(html)
 
             if "error" in res:
                 raise DeathByCaptchaException(res['error'])
@@ -93,14 +94,18 @@ class DeathByCaptcha(Hook):
                 raise DeathByCaptchaException(str(res))
 
         except BadHeader, e:
-            if 403 is e.code:
+            if e.code == 403:
                 raise DeathByCaptchaException('not-logged-in')
-            elif 413 is e.code:
+
+            elif e.code == 413:
                 raise DeathByCaptchaException('invalid-captcha')
-            elif 503 is e.code:
+
+            elif e.code == 503:
                 raise DeathByCaptchaException('service-overload')
+
             elif e.code in (400, 405):
                 raise DeathByCaptchaException('invalid-request')
+
             else:
                 raise
 
@@ -186,13 +191,13 @@ class DeathByCaptcha(Hook):
 
         if balance > rate:
             task.handler.append(self)
-            task.data['service'] = self.__name__
+            task.data['service'] = self.classname
             task.setWaiting(180)
             self._process_captcha(task)
 
 
     def captcha_invalid(self, task):
-        if task.data['service'] is self.__name__ and "ticket" in task.data:
+        if task.data['service'] is self.classname and "ticket" in task.data:
             try:
                 res = self.api_response("captcha/%d/report" % task.data['ticket'], True)
 
@@ -200,7 +205,7 @@ class DeathByCaptcha(Hook):
                 self.log_error(e.getDesc())
 
             except Exception, e:
-                self.log_error(e)
+                self.log_error(e, trace=True)
 
 
     @threaded

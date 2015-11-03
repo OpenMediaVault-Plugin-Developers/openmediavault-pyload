@@ -9,10 +9,11 @@ from module.plugins.internal.Hoster import Hoster
 class YourfilesTo(Hoster):
     __name__    = "YourfilesTo"
     __type__    = "hoster"
-    __version__ = "0.24"
+    __version__ = "0.26"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?yourfiles\.(to|biz)/\?d=\w+'
+    __config__  = [("activated", "bool", "Activated", True)]
 
     __description__ = """Youfiles.to hoster plugin"""
     __license__     = "GPLv3"
@@ -36,12 +37,12 @@ class YourfilesTo(Hoster):
 
 
     def get_waiting_time(self):
-        if not self.html:
+        if not self.data:
             self.download_html()
 
         #: var zzipitime = 15
-        m = re.search(r'var zzipitime = (\d+);', self.html)
-        if m:
+        m = re.search(r'var zzipitime = (\d+);', self.data)
+        if m is not None:
             sec = int(m.group(1))
         else:
             sec = 0
@@ -51,14 +52,14 @@ class YourfilesTo(Hoster):
 
     def download_html(self):
         url = self.pyfile.url
-        self.html = self.load(url)
+        self.data = self.load(url)
 
 
     def get_file_url(self):
         """
         Returns the absolute downloadable filepath
         """
-        url = re.search(r"var bla = '(.*?)';", self.html)
+        url = re.search(r"var bla = '(.*?)';", self.data)
         if url:
             url = url.group(1)
             url = urllib.unquote(url.replace("http://http:/http://", "http://").replace("dumdidum", ""))
@@ -68,20 +69,20 @@ class YourfilesTo(Hoster):
 
 
     def get_file_name(self):
-        if not self.html:
+        if not self.data:
             self.download_html()
 
-        return re.search("<title>(.*)</title>", self.html).group(1)
+        return re.search("<title>(.*)</title>", self.data).group(1)
 
 
     def file_exists(self):
         """
         Returns True or False
         """
-        if not self.html:
+        if not self.data:
             self.download_html()
 
-        if re.search(r"HTTP Status 404", self.html):
+        if re.search(r"HTTP Status 404", self.data):
             return False
         else:
             return True

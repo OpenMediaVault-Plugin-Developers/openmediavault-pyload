@@ -12,17 +12,16 @@ import logging
 import os
 import subprocess
 # import tempfile
-import traceback
 
 from module.plugins.internal.Plugin import Plugin
-from module.utils import save_join as fs_join
+from module.plugins.internal.utils import fs_join
 
 
 class OCR(Plugin):
     __name__    = "OCR"
     __type__    = "ocr"
-    __version__ = "0.19"
-    __status__  = "testing"
+    __version__ = "0.21"
+    __status__  = "stable"
 
     __description__ = """OCR base plugin"""
     __license__     = "GPLv3"
@@ -35,18 +34,9 @@ class OCR(Plugin):
         self.init()
 
 
-    def init(self):
-        """
-        Initialize additional data structures
-        """
-        pass
-
-
     def _log(self, level, plugintype, pluginname, messages):
-        return self.plugin._log(level,
-                                plugintype,
-                                self.plugin.__name__,
-                                (self.__name__,) + messages)
+        messages = (self.__name__,) + messages
+        return self.plugin._log(level, plugintype, self.plugin.__name__, messages)
 
 
     def load_image(self, image):
@@ -75,27 +65,27 @@ class OCR(Plugin):
         output = popen.stdout.read() + " | " + popen.stderr.read()
         popen.stdout.close()
         popen.stderr.close()
-        self.pyload.log_debug("Tesseract ReturnCode " + popen.returncode, "Output: " + output)
+        self.log_debug("Tesseract ReturnCode %d" % popen.returncode, "Output: %s" % output)
 
 
     def run_tesser(self, subset=False, digits=True, lowercase=True, uppercase=True, pagesegmode=None):
         # tmpTif = tempfile.NamedTemporaryFile(suffix=".tif")
         try:
-            tmpTif = open(fs_join("tmp", "tmpTif_%s.tif" % self.__name__), "wb")
+            tmpTif = open(fs_join("tmp", "tmpTif_%s.tif" % self.classname), "wb")
             tmpTif.close()
 
             # tmpTxt = tempfile.NamedTemporaryFile(suffix=".txt")
-            tmpTxt = open(fs_join("tmp", "tmpTxt_%s.txt" % self.__name__), "wb")
+            tmpTxt = open(fs_join("tmp", "tmpTxt_%s.txt" % self.classname), "wb")
             tmpTxt.close()
 
         except IOError, e:
             self.log_error(e)
             return
 
-        self.pyload.log_debug("Saving tiff...")
+        self.log_debug("Saving tiff...")
         self.image.save(tmpTif.name, 'TIFF')
 
-        if os.name == "nt":
+        if os.name is "nt":
             tessparams = [os.path.join(pypath, "tesseract", "tesseract.exe")]
         else:
             tessparams = ["tesseract"]
@@ -107,7 +97,7 @@ class OCR(Plugin):
 
         if subset and (digits or lowercase or uppercase):
             # tmpSub = tempfile.NamedTemporaryFile(suffix=".subset")
-            with open(fs_join("tmp", "tmpSub_%s.subset" % self.__name__), "wb") as tmpSub:
+            with open(fs_join("tmp", "tmpSub_%s.subset" % self.classname), "wb") as tmpSub:
                 tmpSub.write("tessedit_char_whitelist ")
 
                 if digits:
@@ -121,26 +111,26 @@ class OCR(Plugin):
                 tessparams.append("nobatch")
                 tessparams.append(os.path.abspath(tmpSub.name))
 
-        self.pyload.log_debug("Running tesseract...")
+        self.log_debug("Running tesseract...")
         self.run(tessparams)
-        self.pyload.log_debug("Reading txt...")
+        self.log_debug("Reading txt...")
 
         try:
             with open(tmpTxt.name, 'r') as f:
                 self.result_captcha = f.read().replace("\n", "")
+
         except Exception:
             self.result_captcha = ""
 
-        self.pyload.log_info(_("OCR result: ") + self.result_captcha)
+        self.log_info(_("OCR result: ") + self.result_captcha)
         try:
             os.remove(tmpTif.name)
             os.remove(tmpTxt.name)
             if subset and (digits or lowercase or uppercase):
                 os.remove(tmpSub.name)
+
         except OSError, e:
             self.log_warning(e)
-            if self.pyload.debug:
-                traceback.print_exc()
 
 
     def recognize(self, name):
@@ -180,20 +170,28 @@ class OCR(Plugin):
                 try:
                     if pixels[x - 1, y - 1] != 255:
                         count += 1
+
                     if pixels[x - 1, y] != 255:
                         count += 1
+
                     if pixels[x - 1, y + 1] != 255:
                         count += 1
+
                     if pixels[x, y + 1] != 255:
                         count += 1
+
                     if pixels[x + 1, y + 1] != 255:
                         count += 1
+
                     if pixels[x + 1, y] != 255:
                         count += 1
+
                     if pixels[x + 1, y - 1] != 255:
                         count += 1
+
                     if pixels[x, y - 1] != 255:
                         count += 1
+
                 except Exception:
                     pass
 

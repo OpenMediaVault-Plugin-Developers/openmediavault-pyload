@@ -5,19 +5,21 @@ import re
 
 from Crypto.Cipher import AES
 
-from module.plugins.internal.Crypter import Crypter
+from module.plugins.internal.Crypter import Crypter, create_getInfo
 from module.plugins.captcha.ReCaptcha import ReCaptcha
 
 
 class NCryptIn(Crypter):
     __name__    = "NCryptIn"
     __type__    = "crypter"
-    __version__ = "1.37"
+    __version__ = "1.39"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?ncrypt\.in/(?P<TYPE>folder|link|frame)-([^/\?]+)'
-    __config__  = [("use_subfolder"     , "bool", "Save package to subfolder"          , True),
-                   ("subfolder_per_pack", "bool", "Create a subfolder for each package", True)]
+    __config__  = [("activated"            , "bool", "Activated"                          , True),
+                   ("use_premium"          , "bool", "Use premium account if available"   , True),
+                   ("use_subfolder"        , "bool", "Save package to subfolder"          , True),
+                   ("subfolder_per_package", "bool", "Create a subfolder for each package", True)]
 
     __description__ = """NCrypt.in decrypter plugin"""
     __license__     = "GPLv3"
@@ -53,15 +55,15 @@ class NCryptIn(Crypter):
         else:
 
             #: Request folder home
-            self.html = self.request_folder_home()
-            self.cleaned_html = self.remove_html_crap(self.html)
+            self.data = self.request_folder_home()
+            self.cleaned_html = self.remove_html_crap(self.data)
             if not self.is_online():
                 self.offline()
 
             #: Check for folder protection
             if self.is_protected():
-                self.html = self.unlock_protection()
-                self.cleaned_html = self.remove_html_crap(self.html)
+                self.data = self.unlock_protection()
+                self.cleaned_html = self.remove_html_crap(self.data)
                 self.handle_errors()
 
             #: Prepare package name and folder
@@ -120,8 +122,8 @@ class NCryptIn(Crypter):
 
 
     def get_package_info(self):
-        m = re.search(self.NAME_PATTERN, self.html)
-        if m:
+        m = re.search(self.NAME_PATTERN, self.data)
+        if m is not None:
             name = folder = m.group('N').strip()
             self.log_debug("Found name [%s] and folder [%s] in package info" % (name, folder))
         else:
@@ -165,7 +167,7 @@ class NCryptIn(Crypter):
             self.log_debug("CircleCaptcha protected")
             captcha_img_url = "http://ncrypt.in/classes/captcha/circlecaptcha.php"
             coords = self.captcha.decrypt(captcha_img_url, input_type="png", output_type='positional', ocr="CircleCaptcha")
-            self.log_debug("Captcha resolved, coords [%s]" % str(coords))
+            self.log_debug("Captcha resolved, coords %s" % coords)
             postData['circle.x'] = coords[0]
             postData['circle.y'] = coords[1]
 
@@ -177,13 +179,11 @@ class NCryptIn(Crypter):
     def handle_errors(self):
         if self.protection_type == "password":
             if "This password is invalid!" in self.cleaned_html:
-                self.log_debug("Incorrect password, please set right password on 'Edit package' form and retry")
-                self.fail(_("Incorrect password, please set right password on 'Edit package' form and retry"))
+                self.fail(_("Wrong password"))
 
         if self.protection_type == "captcha":
-            if "The securitycheck was wrong!" in self.cleaned_html:
-                self.captcha.invalid()
-                self.retry()
+            if "The securitycheck was wrong" in self.cleaned_html:
+                self.retry_captcha()
             else:
                 self.captcha.correct()
 
@@ -229,6 +229,7 @@ class NCryptIn(Crypter):
                 (vcrypted, vjk) = self._get_cipher_params()
                 for (crypted, jk) in zip(vcrypted, vjk):
                     package_links.extend(self._get_links(crypted, jk))
+
             except Exception:
                 self.fail(_("Unable to decrypt CNL2 links"))
 
@@ -240,7 +241,7 @@ class NCryptIn(Crypter):
         package_links = []
 
         pattern = r'/container/(rsdf|dlc|ccf)/(\w+)'
-        containersLinks = re.findall(pattern, self.html)
+        containersLinks = re.findall(pattern, self.data)
         self.log_debug("Decrypting %d Container links" % len(containersLinks))
         for containerLink in containersLinks:
             link = "http://ncrypt.in/container/%s/%s.%s" % (containerLink[0], containerLink[1], containerLink[0])
@@ -252,7 +253,7 @@ class NCryptIn(Crypter):
     def handle_web_links(self):
         self.log_debug("Handling Web links")
         pattern = r'(http://ncrypt\.in/link-.*?=)'
-        links = re.findall(pattern, self.html)
+        links = re.findall(pattern, self.data)
 
         package_links = []
         self.log_debug("Decrypting %d Web links" % len(links))
@@ -270,6 +271,7 @@ class NCryptIn(Crypter):
             url = link.replace("link-", "frame-")
             link = self.load(url, just_header=True)['location']
             return link
+
         except Exception, detail:
             self.log_debug("Error decrypting link %s, %s" % (link, detail))
 
@@ -279,11 +281,11 @@ class NCryptIn(Crypter):
 
         #: Get jk
         jk_re = pattern % NCryptIn.JK_KEY
-        vjk = re.findall(jk_re, self.html)
+        vjk = re.findall(jk_re, self.data)
 
         #: Get crypted
         crypted_re = pattern % NCryptIn.CRYPTED_KEY
-        vcrypted = re.findall(crypted_re, self.html)
+        vcrypted = re.findall(crypted_re, self.data)
 
         #: Log and return
         self.log_debug("Detected %d crypted blocks" % len(vcrypted))
@@ -309,3 +311,6 @@ class NCryptIn(Crypter):
         #: Log and return
         self.log_debug("Block has %d links" % len(links))
         return links
+
+
+getInfo = create_getInfo(NCryptIn)

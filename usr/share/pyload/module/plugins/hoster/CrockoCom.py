@@ -10,11 +10,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class CrockoCom(SimpleHoster):
     __name__    = "CrockoCom"
     __type__    = "hoster"
-    __version__ = "0.21"
+    __version__ = "0.24"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?(crocko|easy-share)\.com/\w+'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Crocko hoster plugin"""
     __license__     = "GPLv3"
@@ -34,19 +38,19 @@ class CrockoCom(SimpleHoster):
 
 
     def handle_free(self, pyfile):
-        if "You need Premium membership to download this file." in self.html:
+        if "You need Premium membership to download this file." in self.data:
             self.fail(_("You need Premium membership to download this file"))
 
         for _i in xrange(5):
-            m = re.search(self.CAPTCHA_PATTERN, self.html)
-            if m:
-                url = urlparse.urljoin("http://crocko.com", m.group(1))
+            m = re.search(self.CAPTCHA_PATTERN, self.data)
+            if m is not None:
+                url = urlparse.urljoin("http://crocko.com/", m.group(1))
                 self.wait(m.group(2))
-                self.html = self.load(url)
+                self.data = self.load(url)
             else:
                 break
 
-        m = re.search(self.FORM_PATTERN, self.html, re.S)
+        m = re.search(self.FORM_PATTERN, self.data, re.S)
         if m is None:
             self.error(_("FORM_PATTERN not found"))
 
@@ -54,16 +58,11 @@ class CrockoCom(SimpleHoster):
         inputs = dict(re.findall(self.FORM_INPUT_PATTERN, form))
         recaptcha = ReCaptcha(self)
 
-        for _i in xrange(5):
-            inputs['recaptcha_response_field'], inputs['recaptcha_challenge_field'] = recaptcha.challenge()
-            self.download(action, post=inputs)
+        inputs['recaptcha_response_field'], inputs['recaptcha_challenge_field'] = recaptcha.challenge()
+        self.download(action, post=inputs)
 
-            if self.check_download({'captcha': recaptcha.KEY_AJAX_PATTERN}):
-                self.captcha.invalid()
-            else:
-                break
-        else:
-            self.fail(_("No valid captcha solution received"))
+        if self.check_file({'captcha': recaptcha.KEY_AJAX_PATTERN}):
+            self.retry_captcha()
 
 
 getInfo = create_getInfo(CrockoCom)

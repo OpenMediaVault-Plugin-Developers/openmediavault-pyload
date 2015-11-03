@@ -7,13 +7,13 @@ import sys
 import zipfile
 
 from module.plugins.internal.Extractor import Extractor, ArchiveError, CRCError, PasswordError
-from module.utils import fs_encode
 
 
 class UnZip(Extractor):
     __name__    = "UnZip"
-    __version__ = "1.15"
-    __status__  = "testing"
+    __type__    = "extractor"
+    __version__ = "1.20"
+    __status__  = "stable"
 
     __description__ = """Zip extractor plugin"""
     __license__     = "GPLv3"
@@ -30,28 +30,33 @@ class UnZip(Extractor):
 
 
     def list(self, password=None):
-        with zipfile.ZipFile(fs_encode(self.filename), 'r', allowZip64=True) as z:
+        with zipfile.ZipFile(self.target, 'r', allowZip64=True) as z:
             z.setpassword(password)
             return z.namelist()
 
 
-    def check(self, password):
-        pass
+    def verify(self, password=None):
+        with zipfile.ZipFile(self.target, 'r', allowZip64=True) as z:
+            z.setpassword(password)
 
+            try:
+                badfile = z.testzip()
 
-    def verify(self):
-        with zipfile.ZipFile(fs_encode(self.filename), 'r', allowZip64=True) as z:
-            badfile = z.testzip()
+            except RuntimeError, e:
+                if "encrypted" in e.args[0] or "Bad password" in e.args[0]:
+                    raise PasswordError
+                else:
+                    raise CRCError("Archive damaged")
 
-            if badfile:
-                raise CRCError(badfile)
             else:
-                raise PasswordError
+                if badfile:
+                    raise CRCError(badfile)
+
 
 
     def extract(self, password=None):
         try:
-            with zipfile.ZipFile(fs_encode(self.filename), 'r', allowZip64=True) as z:
+            with zipfile.ZipFile(self.target, 'r', allowZip64=True) as z:
                 z.setpassword(password)
 
                 badfile = z.testzip()
@@ -65,7 +70,7 @@ class UnZip(Extractor):
             raise ArchiveError(e)
 
         except RuntimeError, e:
-            if "encrypted" in e:
+            if "encrypted" in e.args[0] or "Bad password" in e.args[0]:
                 raise PasswordError
             else:
                 raise ArchiveError(e)

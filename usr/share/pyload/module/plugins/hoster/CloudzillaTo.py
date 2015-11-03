@@ -8,11 +8,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class CloudzillaTo(SimpleHoster):
     __name__    = "CloudzillaTo"
     __type__    = "hoster"
-    __version__ = "0.08"
+    __version__ = "0.11"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?cloudzilla\.to/share/file/(?P<ID>[\w^_]+)'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Cloudzilla.to hoster plugin"""
     __license__     = "GPLv3"
@@ -26,30 +30,30 @@ class CloudzillaTo(SimpleHoster):
 
 
     def check_errors(self):
-        if re.search(self.PASSWORD_PATTERN, self.html):
+        if re.search(self.PASSWORD_PATTERN, self.data):
             pw = self.get_password()
             if pw:
-                self.html = self.load(self.pyfile.url, get={'key': pw})
+                self.data = self.load(self.pyfile.url, get={'key': pw})
             else:
                 self.fail(_("Missing password"))
 
-        if re.search(self.PASSWORD_PATTERN, self.html):
-            self.retry(reason="Wrong password")
+        if re.search(self.PASSWORD_PATTERN, self.data):
+            self.retry(msg="Wrong password")
         else:
             return super(CloudzillaTo, self).check_errors()
 
 
     def handle_free(self, pyfile):
-        self.html = self.load("http://www.cloudzilla.to/generateticket/",
+        self.data = self.load("http://www.cloudzilla.to/generateticket/",
                               post={'file_id': self.info['pattern']['ID'], 'key': self.get_password()})
 
-        ticket = dict(re.findall(r'<(.+?)>([^<>]+?)</', self.html))
+        ticket = dict(re.findall(r'<(.+?)>([^<>]+?)</', self.data))
 
         self.log_debug(ticket)
 
         if 'error' in ticket:
             if "File is password protected" in ticket['error']:
-                self.retry(reason="Wrong password")
+                self.retry(msg="Wrong password")
             else:
                 self.fail(ticket['error'])
 

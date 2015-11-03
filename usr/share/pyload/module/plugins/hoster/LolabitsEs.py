@@ -3,16 +3,21 @@
 import re
 
 from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
-from module.utils import html_unescape
+from module.plugins.internal.utils import html_unescape
 
 
 class LolabitsEs(SimpleHoster):
     __name__    = "LolabitsEs"
     __type__    = "hoster"
-    __version__ = "0.03"
+    __version__ = "0.05"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?lolabits\.es/.+'
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Lolabits.es hoster plugin"""
     __license__     = "GPLv3"
@@ -33,18 +38,18 @@ class LolabitsEs(SimpleHoster):
 
 
     def handle_free(self, pyfile):
-        fileid = re.search(self.FILEID_PATTERN, self.html).group(1)
+        fileid = re.search(self.FILEID_PATTERN, self.data).group(1)
         self.log_debug("FileID: " + fileid)
 
-        token = re.search(self.TOKEN_PATTERN, self.html).group(1)
+        token = re.search(self.TOKEN_PATTERN, self.data).group(1)
         self.log_debug("Token: " + token)
 
-        self.html = self.load("http://lolabits.es/action/License/Download",
+        self.data = self.load("http://lolabits.es/action/License/Download",
                               post={'fileId'                     : fileid,
                                     '__RequestVerificationToken' : token},
                               decode="unicode-escape")
 
-        self.link = html_unescape(re.search(self.LINK_PATTERN, self.html).group(1))
+        self.link = html_unescape(re.search(self.LINK_PATTERN, self.data).group(1))
 
 
 getInfo = create_getInfo(LolabitsEs)

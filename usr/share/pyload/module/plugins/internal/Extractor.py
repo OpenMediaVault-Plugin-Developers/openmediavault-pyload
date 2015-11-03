@@ -5,6 +5,7 @@ import re
 
 from module.PyFile import PyFile
 from module.plugins.internal.Plugin import Plugin
+from module.plugins.internal.utils import encode
 
 
 class ArchiveError(Exception):
@@ -22,8 +23,8 @@ class PasswordError(Exception):
 class Extractor(Plugin):
     __name__    = "Extractor"
     __type__    = "extractor"
-    __version__ = "0.33"
-    __status__  = "testing"
+    __version__ = "0.40"
+    __status__  = "stable"
 
     __description__ = """Base extractor plugin"""
     __license__     = "GPLv3"
@@ -37,13 +38,13 @@ class Extractor(Plugin):
 
 
     @classmethod
-    def is_archive(cls, filename):
+    def isarchive(cls, filename):
         name = os.path.basename(filename).lower()
         return any(name.endswith(ext) for ext in cls.EXTENSIONS)
 
 
     @classmethod
-    def is_multipart(cls, filename):
+    def ismultipart(cls, filename):
         return False
 
 
@@ -51,7 +52,6 @@ class Extractor(Plugin):
     def find(cls):
         """
         Check if system statisfy dependencies
-        :return: boolean
         """
         pass
 
@@ -67,11 +67,12 @@ class Extractor(Plugin):
         processed = []
 
         for fname, id, fout in files_ids:
-            if cls.is_archive(fname):
-                pname = re.sub(cls.re_multipart, "", fname) if cls.is_multipart(fname) else os.path.splitext(fname)[0]
+            if cls.isarchive(fname):
+                pname = re.sub(cls.re_multipart, "", fname) if cls.ismultipart(fname) else os.path.splitext(fname)[0]
                 if pname not in processed:
                     processed.append(pname)
                     targets.append((fname, id, fout))
+
         return targets
 
 
@@ -79,8 +80,8 @@ class Extractor(Plugin):
                  fullpath=True,
                  overwrite=False,
                  excludefiles=[],
-                 renice=0,
-                 delete='No',
+                 renice=False,
+                 priority=0,
                  keepbroken=False,
                  fid=None):
         """
@@ -94,8 +95,7 @@ class Extractor(Plugin):
         self.fullpath     = fullpath
         self.overwrite    = overwrite
         self.excludefiles = excludefiles
-        self.renice       = renice
-        self.delete       = delete
+        self.priority     = priority
         self.keepbroken   = keepbroken
         self.files        = []  #: Store extracted files here
 
@@ -105,67 +105,39 @@ class Extractor(Plugin):
         self.init()
 
 
-    def init(self):
+    @property
+    def target(self):
+        return encode(self.filename)
+
+
+    def _log(self, level, plugintype, pluginname, messages):
+        messages = (self.__name__,) + messages
+        return self.plugin._log(level, plugintype, self.plugin.__name__, messages)
+
+
+    def verify(self, password=None):
         """
-        Initialize additional data structures
+        Testing with Extractors built-in method
+        Raise error if password is needed, integrity is questionable or else
         """
         pass
 
 
-    def _log(self, level, plugintype, pluginname, messages):
-        return self.plugin._log(level,
-                                plugintype,
-                                self.plugin.__name__,
-                                (self.__name__,) + messages)
-
-
-    def check(self):
-        """
-        Quick Check by listing content of archive.
-        Raises error if password is needed, integrity is questionable or else.
-
-        :raises PasswordError
-        :raises CRCError
-        :raises ArchiveError
-        """
-        raise NotImplementedError
-
-
-    def verify(self):
-        """
-        Testing with Extractors buildt-in method
-        Raises error if password is needed, integrity is questionable or else.
-
-        :raises PasswordError
-        :raises CRCError
-        :raises ArchiveError
-        """
-        raise NotImplementedError
-
-
     def repair(self):
-        return None
+        pass
 
 
     def extract(self, password=None):
         """
-        Extract the archive. Raise specific errors in case of failure.
-
-        :param progress: Progress function, call this to update status
-        :param password password to use
-        :raises PasswordError
-        :raises CRCError
-        :raises ArchiveError
-        :return:
+        Extract the archive
+        Raise specific errors in case of failure
         """
         raise NotImplementedError
 
 
-    def get_delete_files(self):
+    def items(self):
         """
-        Return list of files to delete, do *not* delete them here.
-
-        :return: List with paths of files to delete
+        Return list of archive parts
         """
         return [self.filename]
 

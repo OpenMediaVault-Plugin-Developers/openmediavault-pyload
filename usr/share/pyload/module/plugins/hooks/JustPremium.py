@@ -8,11 +8,12 @@ from module.plugins.internal.Addon import Addon
 class JustPremium(Addon):
     __name__    = "JustPremium"
     __type__    = "hook"
-    __version__ = "0.24"
+    __version__ = "0.25"
     __status__  = "testing"
 
-    __config__ = [("excluded", "str", "Exclude hosters (comma separated)", ""),
-                  ("included", "str", "Include hosters (comma separated)", "")]
+    __config__ = [("activated", "bool", "Activated"                        , False),
+                  ("excluded" , "str" , "Exclude hosters (comma separated)", ""   ),
+                  ("included" , "str" , "Include hosters (comma separated)", ""   )]
 
     __description__ = """Remove not-premium links from added urls"""
     __license__     = "GPLv3"

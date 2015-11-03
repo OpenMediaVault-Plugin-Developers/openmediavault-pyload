@@ -3,7 +3,7 @@
 import re
 import time
 
-from module.common.json_layer import json_loads
+from module.plugins.internal.utils import json
 from module.plugins.captcha.ReCaptcha import ReCaptcha
 from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 
@@ -11,11 +11,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class FilepostCom(SimpleHoster):
     __name__    = "FilepostCom"
     __type__    = "hoster"
-    __version__ = "0.35"
+    __version__ = "0.38"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?(?:filepost\.com/files|fp\.io)/(?P<ID>[^/]+)'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Filepost.com hoster plugin"""
     __license__     = "GPLv3"
@@ -31,12 +35,12 @@ class FilepostCom(SimpleHoster):
 
 
     def handle_free(self, pyfile):
-        m = re.search(self.FLP_TOKEN_PATTERN, self.html)
+        m = re.search(self.FLP_TOKEN_PATTERN, self.data)
         if m is None:
             self.error(_("Token"))
         flp_token = m.group(1)
 
-        m = re.search(self.RECAPTCHA_PATTERN, self.html)
+        m = re.search(self.RECAPTCHA_PATTERN, self.data)
         if m is None:
             self.error(_("Captcha key"))
         captcha_key = m.group(1)
@@ -51,7 +55,7 @@ class FilepostCom(SimpleHoster):
 
         post_dict = {'token': flp_token, 'code': self.info['pattern']['ID'], 'file_pass': ''}
 
-        if 'var is_pass_exists = true;' in self.html:
+        if 'var is_pass_exists = true;' in self.data:
             #: Solve password
             password = self.get_password()
 
@@ -64,30 +68,23 @@ class FilepostCom(SimpleHoster):
                 self.link = self.get_json_response(get_dict, post_dict, 'link')
 
                 if not self.link:
-                    self.fail(_("Incorrect password"))
+                    self.fail(_("Wrong password"))
             else:
                 self.fail(_("No password found"))
 
         else:
-            #: Solve recaptcha
-            recaptcha = ReCaptcha(self)
+            get_dict['JsHttpRequest'] = str(int(time.time() * 10000)) + '-xml'
+            self.link = self.get_json_response(get_dict, post_dict, 'link')
 
-            for i in xrange(5):
-                get_dict['JsHttpRequest'] = str(int(time.time() * 10000)) + '-xml'
-                if i:
-                    post_dict['recaptcha_response_field'], post_dict['recaptcha_challenge_field'] = recaptcha.challenge(
-                        captcha_key)
-                    self.log_debug(u"RECAPTCHA: %s : %s : %s" % (
-                        captcha_key, post_dict['recaptcha_challenge_field'], post_dict['recaptcha_response_field']))
-
+            if not self.link:
+                #: Solve recaptcha
+                recaptcha = ReCaptcha(self)
+                post_dict['recaptcha_response_field'], post_dict['recaptcha_challenge_field'] = recaptcha.challenge(captcha_key)
                 self.link = self.get_json_response(get_dict, post_dict, 'link')
-
-            else:
-                self.fail(_("Invalid captcha"))
 
 
     def get_json_response(self, get_dict, post_dict, field):
-        res = json_loads(self.load('https://filepost.com/files/get/', get=get_dict, post=post_dict))
+        res = json.loads(self.load('https://filepost.com/files/get/', get=get_dict, post=post_dict))
 
         self.log_debug(res)
 
@@ -101,8 +98,8 @@ class FilepostCom(SimpleHoster):
         if 'error' in res['js']:
 
             if res['js']['error'] == "download_delay":
-                self.retry(wait_time=res['js']['params']['next_download'])
-                #: ~? self.retry(wait_time=js_answer['params']['next_download'])
+                self.retry(wait=res['js']['params']['next_download'])
+                #: ~? self.retry(wait=js_answer['params']['next_download'])
 
             elif 'Wrong file password' in res['js']['error'] \
                  or 'You entered a wrong CAPTCHA code' in res['js']['error'] \

@@ -8,16 +8,19 @@ import re
 from Crypto.Cipher import AES
 
 from module.plugins.internal.Container import Container
-from module.utils import fs_encode
+from module.plugins.internal.utils import encode
 
 
 class RSDF(Container):
     __name__    = "RSDF"
     __type__    = "container"
-    __version__ = "0.31"
+    __version__ = "0.33"
     __status__  = "testing"
 
     __pattern__ = r'.+\.rsdf$'
+    __config__  = [("activated"            , "bool", "Activated"                          , True),
+                   ("use_subfolder"        , "bool", "Save package to subfolder"          , True),
+                   ("subfolder_per_package", "bool", "Create a subfolder for each package", True)]
 
     __description__ = """RSDF container decrypter plugin"""
     __license__     = "GPLv3"
@@ -38,7 +41,7 @@ class RSDF(Container):
         cipher = AES.new(KEY, AES.MODE_CFB, iv)
 
         try:
-            fs_filename = fs_encode(pyfile.url.strip())
+            fs_filename = encode(pyfile.url.strip())
             with open(fs_filename, 'r') as rsdf:
                 data = rsdf.read()
 
@@ -59,4 +62,4 @@ class RSDF(Container):
                 if not link:
                     continue
                 link = cipher.decrypt(link.decode('base64')).replace('CCF: ', '')
-                self.urls.append(link)
+                self.links.append(link)

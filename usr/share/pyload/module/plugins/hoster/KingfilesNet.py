@@ -9,11 +9,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class KingfilesNet(SimpleHoster):
     __name__    = "KingfilesNet"
     __type__    = "hoster"
-    __version__ = "0.09"
+    __version__ = "0.11"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?kingfiles\.net/(?P<ID>\w{12})'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Kingfiles.net hoster plugin"""
     __license__     = "GPLv3"
@@ -45,18 +49,18 @@ class KingfilesNet(SimpleHoster):
                      'referer'    : "",
                      'method_free': "+"}
 
-        self.html = self.load(pyfile.url, post=post_data)
+        self.data = self.load(pyfile.url, post=post_data)
 
         solvemedia = SolveMedia(self)
         response, challenge = solvemedia.challenge()
 
         #: Make the downloadlink appear and load the file
-        m = re.search(self.RAND_ID_PATTERN, self.html)
+        m = re.search(self.RAND_ID_PATTERN, self.data)
         if m is None:
             self.error(_("Random key not found"))
 
         rand = m.group(1)
-        self.log_debug("rand = ", rand)
+        self.log_debug("rand = " + rand)
 
         post_data = {'op'              : "download2",
                      'id'              : self.info['pattern']['ID'],
@@ -68,9 +72,9 @@ class KingfilesNet(SimpleHoster):
                      'adcopy_challenge': challenge,
                      'down_direct'     : "1"}
 
-        self.html = self.load(pyfile.url, post=post_data)
+        self.data = self.load(pyfile.url, post=post_data)
 
-        m = re.search(self.LINK_FREE_PATTERN, self.html)
+        m = re.search(self.LINK_FREE_PATTERN, self.data)
         if m is None:
             self.error(_("Download url not found"))
 

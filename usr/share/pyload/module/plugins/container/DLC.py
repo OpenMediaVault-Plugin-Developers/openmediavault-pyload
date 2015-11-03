@@ -8,16 +8,19 @@ import xml.dom.minidom
 from Crypto.Cipher import AES
 
 from module.plugins.internal.Container import Container
-from module.utils import decode, fs_encode
+from module.plugins.internal.utils import decode, encode
 
 
 class DLC(Container):
     __name__    = "DLC"
     __type__    = "container"
-    __version__ = "0.26"
+    __version__ = "0.28"
     __status__  = "testing"
 
-    __pattern__ = r'.+\.dlc$'
+    __pattern__ = r'(.+\.dlc|[\w\+^_]+==[\w\+^_/]+==)$'
+    __config__  = [("activated"            , "bool", "Activated"                          , True),
+                   ("use_subfolder"        , "bool", "Save package to subfolder"          , True),
+                   ("subfolder_per_package", "bool", "Create a subfolder for each package", True)]
 
     __description__ = """DLC container decrypter plugin"""
     __license__     = "GPLv3"
@@ -34,7 +37,7 @@ class DLC(Container):
 
 
     def decrypt(self, pyfile):
-        fs_filename = fs_encode(pyfile.url.strip())
+        fs_filename = encode(pyfile.url.strip())
         with open(fs_filename) as dlc:
             data = dlc.read().strip()
 

@@ -8,7 +8,7 @@ import re
 import zlib
 
 from module.plugins.internal.Addon import Addon
-from module.utils import save_join as fs_join, fs_encode
+from module.plugins.internal.utils import encode, fs_join
 
 
 def compute_checksum(local_file, algorithm):
@@ -38,14 +38,15 @@ def compute_checksum(local_file, algorithm):
 class Checksum(Addon):
     __name__    = "Checksum"
     __type__    = "hook"
-    __version__ = "0.19"
+    __version__ = "0.23"
     __status__  = "testing"
 
-    __config__ = [("check_checksum", "bool"             , "Check checksum? (If False only size will be verified)", True   ),
-                  ("check_action" , "fail;retry;nothing", "What to do if check fails?"                           , "retry"),
-                  ("max_tries"    , "int"               , "Number of retries"                                    , 2      ),
-                  ("retry_action" , "fail;nothing"      , "What to do if all retries fail?"                      , "fail" ),
-                  ("wait_time"    , "int"               , "Time to wait before each retry (seconds)"             , 1      )]
+    __config__ = [("activated"     , "bool"              , "Activated"                                            , False  ),
+                  ("check_checksum", "bool"              , "Check checksum? (If False only size will be verified)", True   ),
+                  ("check_action"  , "fail;retry;nothing", "What to do if check fails?"                           , "retry"),
+                  ("max_tries"     , "int"               , "Number of retries"                                    , 2      ),
+                  ("retry_action"  , "fail;nothing"      , "What to do if all retries fail?"                      , "fail" ),
+                  ("wait_time"     , "int"               , "Time to wait before each retry (seconds)"             , 1      )]
 
     __description__ = """Verify downloaded file size and checksum"""
     __license__     = "GPLv3"
@@ -102,9 +103,9 @@ class Checksum(Addon):
         if not pyfile.plugin.last_download:
             self.check_failed(pyfile, None, "No file downloaded")
 
-        local_file = fs_encode(pyfile.plugin.last_download)
-        # download_folder = self.pyload.config.get("general", "download_folder")
-        # local_file = fs_encode(fs_join(download_folder, pyfile.package().folder, pyfile.name))
+        local_file = encode(pyfile.plugin.last_download)
+        # dl_folder  = self.pyload.config.get("general", "download_folder")
+        # local_file = encode(fs_join(dl_folder, pyfile.package().folder, pyfile.name))
 
         if not os.path.isfile(local_file):
             self.check_failed(pyfile, None, "File does not exist")
@@ -114,7 +115,7 @@ class Checksum(Addon):
             api_size  = int(data['size'])
             file_size = os.path.getsize(local_file)
 
-            if api_size is not file_size:
+            if api_size != file_size:
                 self.log_warning(_("File %s has incorrect size: %d B (%d expected)") % (pyfile.name, file_size, api_size))
                 self.check_failed(pyfile, local_file, "Incorrect file size")
 
@@ -131,15 +132,15 @@ class Checksum(Addon):
 
             for key in self.algorithms:
                 if key in data:
-                    checksum = computeChecksum(local_file, key.replace("-", "").lower())
+                    checksum = compute_checksum(local_file, key.replace("-", "").lower())
                     if checksum:
-                        if checksum is data[key].lower():
+                        if checksum == data[key].lower():
                             self.log_info(_('File integrity of "%s" verified by %s checksum (%s)') %
                                         (pyfile.name, key.upper(), checksum))
                             break
                         else:
                             self.log_warning(_("%s checksum for file %s does not match (%s != %s)") %
-                                           (key.upper(), pyfile.name, checksum, data[key]))
+                                           (key.upper(), pyfile.name, checksum, data[key].lower()))
                             self.check_failed(pyfile, local_file, "Checksums do not match")
                     else:
                         self.log_warning(_("Unsupported hashing algorithm"), key.upper())
@@ -160,11 +161,12 @@ class Checksum(Addon):
                 return
         elif check_action == "nothing":
             return
-        pyfile.plugin.fail(reason=msg)
+
+        pyfile.plugin.fail(msg)
 
 
     def package_finished(self, pypack):
-        download_folder = fs_join(self.pyload.config.get("general", "download_folder"), pypack.folder, "")
+        dl_folder = fs_join(self.pyload.config.get("general", "download_folder"), pypack.folder, "")
 
         for link in pypack.getChildren().values():
             file_type = os.path.splitext(link['name'])[1][1:].lower()
@@ -172,7 +174,7 @@ class Checksum(Addon):
             if file_type not in self.formats:
                 continue
 
-            hash_file = fs_encode(fs_join(download_folder, link['name']))
+            hash_file = encode(fs_join(dl_folder, link['name']))
             if not os.path.isfile(hash_file):
                 self.log_warning(_("File not found"), link['name'])
                 continue
@@ -184,9 +186,10 @@ class Checksum(Addon):
                 data = m.groupdict()
                 self.log_debug(link['name'], data)
 
-                local_file = fs_encode(fs_join(download_folder, data['NAME']))
+                local_file = encode(fs_join(dl_folder, data['NAME']))
                 algorithm = self.methods.get(file_type, file_type)
-                checksum = computeChecksum(local_file, algorithm)
+                checksum = compute_checksum(local_file, algorithm)
+
                 if checksum is data['HASH']:
                     self.log_info(_('File integrity of "%s" verified by %s checksum (%s)') %
                                 (data['NAME'], algorithm, checksum))

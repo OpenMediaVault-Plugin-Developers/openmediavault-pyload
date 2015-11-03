@@ -1,21 +1,31 @@
 # -*- coding: utf-8 -*-
 
-from module.common.json_layer import json_loads
-from module.plugins.internal.Account import Account
+from module.plugins.internal.MultiAccount import MultiAccount
+from module.plugins.internal.utils import json
 
 
-class HighWayMe(Account):
+class HighWayMe(MultiAccount):
     __name__    = "HighWayMe.py"
     __type__    = "account"
-    __version__ = "0.04"
+    __version__ = "0.07"
     __status__  = "testing"
+
+    __config__ = [("mh_mode"    , "all;listed;unlisted", "Filter hosters to use"        , "all"),
+                  ("mh_list"    , "str"                , "Hoster list (comma separated)", ""   ),
+                  ("mh_interval", "int"                , "Reload interval in minutes"   , 60   )]
 
     __description__ = """High-Way.me account plugin"""
     __license__     = "GPLv3"
     __authors__     = [("EvolutionClip", "evolutionclip@live.de")]
 
 
-    def parse_info(self, user, password, data, req):
+    def grab_hosters(self, user, password, data):
+        json_data = json.loads(self.load("https://high-way.me/api.php",
+                                           get={'hoster': 1}))
+        return [element['name'] for element in json_data['hoster']]
+
+
+    def grab_info(self, user, password, data):
         premium     = False
         validuntil  = -1
         trafficleft = None
@@ -24,7 +34,7 @@ class HighWayMe(Account):
 
         self.log_debug("JSON data: %s" % json_data)
 
-        json_data = json_loads(json_data)
+        json_data = json.loads(json_data)
 
         if 'premium' in json_data['user'] and json_data['user']['premium']:
             premium = True
@@ -40,11 +50,11 @@ class HighWayMe(Account):
                 'trafficleft': trafficleft}
 
 
-    def login(self, user, password, data, req):
+    def signin(self, user, password, data):
         html = self.load("https://high-way.me/api.php?login",
                          post={'login': '1',
                                'user': user,
                                'pass': password})
 
         if 'UserOrPassInvalid' in html:
-            self.login_fail()
+            self.fail_login()

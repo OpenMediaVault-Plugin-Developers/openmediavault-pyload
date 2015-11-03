@@ -9,11 +9,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class UpstoreNet(SimpleHoster):
     __name__    = "UpstoreNet"
     __type__    = "hoster"
-    __version__ = "0.07"
+    __version__ = "0.09"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?upstore\.net/'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Upstore.Net File Download Hoster"""
     __license__     = "GPLv3"
@@ -30,14 +34,14 @@ class UpstoreNet(SimpleHoster):
 
     def handle_free(self, pyfile):
         #: STAGE 1: get link to continue
-        m = re.search(self.CHASH_PATTERN, self.html)
+        m = re.search(self.CHASH_PATTERN, self.data)
         if m is None:
             self.error(_("CHASH_PATTERN not found"))
         chash = m.group(1)
         self.log_debug("Read hash " + chash)
         #: Continue to stage2
         post_data = {'hash': chash, 'free': 'Slow download'}
-        self.html = self.load(pyfile.url, post=post_data)
+        self.data = self.load(pyfile.url, post=post_data)
 
         #: STAGE 2: solv captcha and wait
         #: First get the infos we need: recaptcha key and wait time
@@ -45,7 +49,7 @@ class UpstoreNet(SimpleHoster):
 
         #: Try the captcha 5 times
         for i in xrange(5):
-            m = re.search(self.WAIT_PATTERN, self.html)
+            m = re.search(self.WAIT_PATTERN, self.data)
             if m is None:
                 self.error(_("Wait pattern not found"))
             wait_time = int(m.group(1))
@@ -58,17 +62,15 @@ class UpstoreNet(SimpleHoster):
             post_data.update({'recaptcha_challenge_field': challenge,
                               'recaptcha_response_field' : response})
 
-            self.html = self.load(pyfile.url, post=post_data)
+            self.data = self.load(pyfile.url, post=post_data)
 
             #: STAGE 3: get direct link
-            m = re.search(self.LINK_FREE_PATTERN, self.html, re.S)
-            if m:
+            m = re.search(self.LINK_FREE_PATTERN, self.data, re.S)
+            if m is not None:
                 break
 
-        if m is None:
-            self.error(_("Download link not found"))
-
-        self.link = m.group(1)
+        if m is not None:
+            self.link = m.group(1)
 
 
 getInfo = create_getInfo(UpstoreNet)

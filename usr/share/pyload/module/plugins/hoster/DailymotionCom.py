@@ -3,7 +3,7 @@
 import re
 
 from module.PyFile import statusMap
-from module.common.json_layer import json_loads
+from module.plugins.internal.utils import json
 from module.network.RequestFactory import getURL as get_url
 from module.plugins.internal.Hoster import Hoster
 
@@ -17,18 +17,22 @@ def get_info(urls):
     for url in urls:
         id   = regex.match(url).group('ID')
         html = get_url(apiurl % id, get=request)
-        info = json_loads(html)
+        info = json.loads(html)
 
         name = info['title'] + ".mp4" if "title" in info else url
 
         if "error" in info or info['access_error']:
             status = "offline"
+
         else:
             status = info['status']
+
             if status in ("ready", "published"):
                 status = "online"
+
             elif status in ("waiting", "processing"):
                 status = "temp. offline"
+
             else:
                 status = "offline"
 
@@ -40,11 +44,12 @@ def get_info(urls):
 class DailymotionCom(Hoster):
     __name__    = "DailymotionCom"
     __type__    = "hoster"
-    __version__ = "0.22"
+    __version__ = "0.24"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?dailymotion\.com/.*video/(?P<ID>[\w^_]+)'
-    __config__  = [("quality", "Lowest;LD 144p;LD 240p;SD 384p;HQ 480p;HD 720p;HD 1080p;Highest", "Quality", "Highest")]
+    __config__  = [("activated", "bool", "Activated", True),
+                   ("quality", "Lowest;LD 144p;LD 240p;SD 384p;HQ 480p;HD 720p;HD 1080p;Highest", "Quality", "Highest")]
 
     __description__ = """Dailymotion.com hoster plugin"""
     __license__     = "GPLv3"
@@ -60,7 +65,7 @@ class DailymotionCom(Hoster):
         streams = []
 
         for result in re.finditer(r"\"(?P<URL>http:\\/\\/www.dailymotion.com\\/cdn\\/H264-(?P<QF>.*?)\\.*?)\"",
-                                  self.html):
+                                  self.data):
             url = result.group('URL')
             qf  = result.group('QF')
 
@@ -118,7 +123,7 @@ class DailymotionCom(Hoster):
         self.check_info(pyfile)
 
         id = re.match(self.__pattern__, pyfile.url).group('ID')
-        self.html = self.load("http://www.dailymotion.com/embed/video/" + id)
+        self.data = self.load("http://www.dailymotion.com/embed/video/" + id)
 
         streams = self.get_streams()
         quality = self.get_quality()

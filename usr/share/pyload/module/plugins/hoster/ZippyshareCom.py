@@ -12,11 +12,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class ZippyshareCom(SimpleHoster):
     __name__    = "ZippyshareCom"
     __type__    = "hoster"
-    __version__ = "0.82"
+    __version__ = "0.85"
     __status__  = "testing"
 
     __pattern__ = r'http://www\d{0,3}\.zippyshare\.com/v(/|iew\.jsp.*key=)(?P<KEY>[\w^_]+)'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Zippyshare.com hoster plugin"""
     __license__     = "GPLv3"
@@ -45,14 +49,14 @@ class ZippyshareCom(SimpleHoster):
 
         if captcha_key:
             try:
-                self.link = re.search(self.LINK_PREMIUM_PATTERN, self.html)
+                self.link = re.search(self.LINK_PREMIUM_PATTERN, self.data)
                 recaptcha.challenge()
 
             except Exception, e:
                 self.error(e)
 
         else:
-            self.link = self.get_link()
+            self.link = self.fixurl(self.get_link())
 
         if self.link and pyfile.name == "file.html":
             pyfile.name = urllib.unquote(self.link.split('/')[-1])
@@ -60,7 +64,7 @@ class ZippyshareCom(SimpleHoster):
 
     def get_link(self):
         #: Get all the scripts inside the html body
-        soup = BeautifulSoup.BeautifulSoup(self.html)
+        soup = BeautifulSoup.BeautifulSoup(self.data)
         scripts = (s.getText().strip() for s in soup.body.findAll('script', type='text/javascript'))
 
         #: Meant to be populated with the initialization of all the DOM elements found in the scripts
@@ -81,7 +85,7 @@ class ZippyshareCom(SimpleHoster):
             return varName
 
         #: Handle all getElementById
-        reVar = r'document.getElementById\(([\'"\w-]+)\)(\.)?(getAttribute\([\'"])?(\w+)?([\'"]\))?'
+        reVar = r'document.getElementById\(([\'"\w\-]+)\)(\.)?(getAttribute\([\'"])?(\w+)?([\'"]\))?'
         scripts = [re.sub(reVar, repl_element_by_id, script) for script in scripts if script]
 
         #: Add try/catch in JS to handle deliberate errors

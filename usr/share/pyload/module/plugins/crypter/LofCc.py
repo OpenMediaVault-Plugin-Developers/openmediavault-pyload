@@ -6,11 +6,11 @@ from module.plugins.internal.DeadCrypter import DeadCrypter, create_getInfo
 class LofCc(DeadCrypter):
     __name__    = "LofCc"
     __type__    = "crypter"
-    __version__ = "0.22"
-    __status__  = "testing"
+    __version__ = "0.24"
+    __status__  = "stable"
 
     __pattern__ = r'http://(?:www\.)?lof\.cc/(.+)'
-    __config__  = []  #@TODO: Remove in 0.4.10
+    __config__  = [("activated", "bool", "Activated", True)]
 
     __description__ = """Lof.cc decrypter plugin"""
     __license__     = "GPLv3"

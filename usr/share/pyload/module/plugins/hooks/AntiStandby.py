@@ -13,7 +13,7 @@ except ImportError:
     pass
 
 from module.plugins.internal.Addon import Addon, Expose
-from module.utils import fs_encode, save_join as fs_join
+from module.plugins.internal.utils import encode, fs_join
 
 
 class Kernel32(object):
@@ -27,7 +27,7 @@ class Kernel32(object):
 class AntiStandby(Addon):
     __name__    = "AntiStandby"
     __type__    = "hook"
-    __version__ = "0.11"
+    __version__ = "0.13"
     __status__  = "testing"
 
     __config__ = [("activated", "bool", "Activated"                       , True ),
@@ -41,8 +41,7 @@ class AntiStandby(Addon):
     __authors__     = [("Walter Purcaro", "vuolter@gmail.com")]
 
 
-    TMP_FILE     = ".antistandby"
-    MIN_INTERVAL = 5
+    TMP_FILE = ".antistandby"
 
 
     def init(self):
@@ -56,10 +55,9 @@ class AntiStandby(Addon):
         display = not self.get_config('display')
 
         if hdd:
-            self.interval = max(self.get_config('interval'), self.MIN_INTERVAL)
-            self.init_periodical(threaded=True)
+            self.start_periodical(self.get_config('interval'), threaded=True)
 
-        if os.name == "nt":
+        if os.name is "nt":
             self.win_standby(system, display)
 
         elif sys.platform == "darwin":
@@ -76,7 +74,7 @@ class AntiStandby(Addon):
         except OSError:
             pass
 
-        if os.name == "nt":
+        if os.name is "nt":
             self.win_standby(True)
 
         elif sys.platform == "darwin":
@@ -155,7 +153,7 @@ class AntiStandby(Addon):
     def max_mtime(self, path):
         return max(0, 0,
                    *(os.path.getmtime(fs_join(root, file))
-                        for root, dirs, files in os.walk(fs_encode(path), topdown=False)
+                        for root, dirs, files in os.walk(encode(path), topdown=False)
                             for file in files))
 
 
@@ -168,8 +166,8 @@ class AntiStandby(Addon):
                     not self.pyload.threadManager.getActiveFiles()):
             return
 
-        download_folder = self.pyload.config.get("general", "download_folder")
-        if (self.max_mtime(download_folder) - self.mtime) < self.interval:
+        dl_folder = self.pyload.config.get("general", "download_folder")
+        if (self.max_mtime(dl_folder) - self.mtime) < self.interval:
             return
 
         self.touch(self.TMP_FILE)

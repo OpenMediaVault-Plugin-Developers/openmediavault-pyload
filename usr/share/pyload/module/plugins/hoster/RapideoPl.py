@@ -1,18 +1,22 @@
 # -*- coding: utf-8 -*-
 
-from module.common.json_layer import json_loads
-from module.plugins.internal.MultiHoster import MultiHoster
+from module.plugins.internal.MultiHoster import MultiHoster, create_getInfo
+from module.plugins.internal.utils import json
 
 
 class RapideoPl(MultiHoster):
     __name__    = "RapideoPl"
     __type__    = "hoster"
-    __version__ = "0.04"
+    __version__ = "0.08"
     __status__  = "testing"
 
     __pattern__ = r'^unmatchable$'
-    __config__  = [("use_premium" , "bool", "Use premium account if available"    , True),
-                   ("revertfailed", "bool", "Revert to standard download if fails", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True ),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True ),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , False),
+                   ("chk_filesize", "bool", "Check file size"                                  , True ),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10   ),
+                   ("revertfailed", "bool", "Revert to standard download if fails"             , True )]
 
     __description__ = """Rapideo.pl multi-hoster plugin"""
     __license__     = "GPLv3"
@@ -27,19 +31,19 @@ class RapideoPl(MultiHoster):
                  'password': "",
                  'url'     : ""}
 
-    ERROR_CODES = {0 : "[%s] Incorrect login credentials",
-                   1 : "[%s] Not enough transfer to download - top-up your account",
-                   2 : "[%s] Incorrect / dead link",
-                   3 : "[%s] Error connecting to hosting, try again later",
-                   9 : "[%s] Premium account has expired",
-                   15: "[%s] Hosting no longer supported",
-                   80: "[%s] Too many incorrect login attempts, account blocked for 24h"}
+    ERROR_CODES = {0 : "Incorrect login credentials",
+                   1 : "Not enough transfer to download - top-up your account",
+                   2 : "Incorrect / dead link",
+                   3 : "Error connecting to hosting, try again later",
+                   9 : "Premium account has expired",
+                   15: "Hosting no longer supported",
+                   80: "Too many incorrect login attempts, account blocked for 24h"}
 
 
     def prepare(self):
         super(RapideoPl, self).prepare()
 
-        data = self.account.get_data(self.user)
+        data = self.account.get_data()
 
         self.usr = data['usr']
         self.pwd = data['pwd']
@@ -66,28 +70,24 @@ class RapideoPl(MultiHoster):
             data = self.run_file_query(pyfile.url, 'fileinfo')
 
         except Exception:
-            self.log_debug("RunFileQuery error")
-            self.temp_offline()
+            self.temp_offline("Query error #1")
 
         try:
-            parsed = json_loads(data)
+            parsed = json.loads(data)
 
         except Exception:
-            self.log_debug("Loads error")
-            self.temp_offline()
+            self.temp_offline("Data not found")
 
         self.log_debug(parsed)
 
         if "errno" in parsed.keys():
             if parsed['errno'] in self.ERROR_CODES:
                 #: Error code in known
-                self.fail(self.ERROR_CODES[parsed['errno']] % self.__name__)
+                self.fail(self.ERROR_CODES[parsed['errno']])
             else:
                 #: Error code isn't yet added to plugin
-                self.fail(
-                    parsed['errstring']
-                    or _("Unknown error (code: %s)") % parsed['errno']
-                )
+                self.fail(parsed['errstring'] or
+                          _("Unknown error (code: %s)") % parsed['errno'])
 
         if "sdownload" in parsed:
             if parsed['sdownload'] == "1":
@@ -102,5 +102,7 @@ class RapideoPl(MultiHoster):
             self.link = self.run_file_query(pyfile.url, 'filedownload')
 
         except Exception:
-            self.log_debug("runFileQuery error #2")
-            self.temp_offline()
+            self.temp_offline("Query error #2")
+
+
+getInfo = create_getInfo(RapideoPl)

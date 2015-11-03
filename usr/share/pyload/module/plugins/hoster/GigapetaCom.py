@@ -10,11 +10,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class GigapetaCom(SimpleHoster):
     __name__    = "GigapetaCom"
     __type__    = "hoster"
-    __version__ = "0.05"
+    __version__ = "0.07"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?gigapeta\.com/dl/\w+'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """GigaPeta.com hoster plugin"""
     __license__     = "GPLv3"
@@ -34,27 +38,16 @@ class GigapetaCom(SimpleHoster):
         captcha_key = str(random.randint(1, 100000000))
         captcha_url = "http://gigapeta.com/img/captcha.gif?x=%s" % captcha_key
 
-        self.req.http.c.setopt(pycurl.FOLLOWLOCATION, 0)
+        self.check_errors()
 
-        for _i in xrange(5):
-            self.check_errors()
+        captcha = self.captcha.decrypt(captcha_url)
+        header  = self.load(pyfile.url,
+                            post={'captcha_key': captcha_key,
+                                  'captcha'    : captcha,
+                                  'download'   : "Download"},
+                            just_header=True)
 
-            captcha = self.captcha.decrypt(captcha_url)
-            self.html = self.load(pyfile.url, post={
-                'captcha_key': captcha_key,
-                'captcha': captcha,
-                'download': "Download"})
-
-            m = re.search(r'Location\s*:\s*(.+)', self.req.http.header, re.I)
-            if m:
-                self.link = m.group(1).rstrip()  #@TODO: Remove .rstrip() in 0.4.10
-                break
-            elif "Entered figures don&#96;t coincide with the picture" in self.html:
-                self.captcha.invalid()
-        else:
-            self.fail(_("No valid captcha code entered"))
-
-        self.req.http.c.setopt(pycurl.FOLLOWLOCATION, 1)
+        self.link = header.get('location')
 
 
 getInfo = create_getInfo(GigapetaCom)

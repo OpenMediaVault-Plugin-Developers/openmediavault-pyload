@@ -10,17 +10,22 @@ import urllib
 from Crypto.Cipher import ARC4
 
 from module.plugins.captcha.ReCaptcha import ReCaptcha
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo, timestamp
+from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+from module.plugins.internal.utils import timestamp
 
 
 class TurbobitNet(SimpleHoster):
     __name__    = "TurbobitNet"
     __type__    = "hoster"
-    __version__ = "0.21"
-    __status__  = "testing"
+    __version__ = "0.25"
+    __status__  = "broken"
 
     __pattern__ = r'http://(?:www\.)?turbobit\.net/(?:download/free/)?(?P<ID>\w+)'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Turbobit.net hoster plugin"""
     __license__     = "GPLv3"
@@ -43,7 +48,7 @@ class TurbobitNet(SimpleHoster):
 
 
     def handle_free(self, pyfile):
-        self.html = self.load("http://turbobit.net/download/free/%s" % self.info['pattern']['ID'])
+        self.data = self.load("http://turbobit.net/download/free/%s" % self.info['pattern']['ID'])
 
         rtUpdate = self.get_rt_update()
 
@@ -51,69 +56,69 @@ class TurbobitNet(SimpleHoster):
 
         self.req.http.c.setopt(pycurl.HTTPHEADER, ["X-Requested-With: XMLHttpRequest"])
 
-        self.html = self.load(self.get_download_url(rtUpdate))
+        self.data = self.load(self.get_download_url(rtUpdate))
 
         self.req.http.c.setopt(pycurl.HTTPHEADER, ["X-Requested-With:"])
 
-        m = re.search(self.LINK_FREE_PATTERN, self.html)
-        if m:
+        m = re.search(self.LINK_FREE_PATTERN, self.data)
+        if m is not None:
             self.link = m.group(1)
 
 
     def solve_captcha(self):
-        for _i in xrange(5):
-            m = re.search(self.LIMIT_WAIT_PATTERN, self.html)
-            if m:
-                wait_time = int(m.group(1))
-                self.wait(wait_time, wait_time > 60)
-                self.retry()
+        m = re.search(self.LIMIT_WAIT_PATTERN, self.data)
+        if m is not None:
+            wait_time = int(m.group(1))
+            self.wait(wait_time, wait_time > 60)
+            self.retry()
 
-            action, inputs = self.parse_html_form("action='#'")
-            if not inputs:
-                self.error(_("Captcha form not found"))
-            self.log_debug(inputs)
+        action, inputs = self.parse_html_form("action='#'")
+        if not inputs:
+            self.error(_("Captcha form not found"))
 
-            if inputs['captcha_type'] == "recaptcha":
-                recaptcha = ReCaptcha(self)
-                inputs['recaptcha_response_field'], inputs['recaptcha_challenge_field'] = recaptcha.challenge()
-            else:
-                m = re.search(self.CAPTCHA_PATTERN, self.html)
-                if m is None:
-                    self.error(_("captcha"))
-                captcha_url = m.group(1)
-                inputs['captcha_response'] = self.captcha.decrypt(captcha_url)
+        self.log_debug(inputs)
 
-            self.log_debug(inputs)
-            self.html = self.load(self.url, post=inputs)
-
-            if '<div class="captcha-error">Incorrect, try again!<' in self.html:
-                self.captcha.invalid()
-            else:
-                self.captcha.correct()
-                break
+        if inputs['captcha_type'] == "recaptcha":
+            recaptcha = ReCaptcha(self)
+            inputs['recaptcha_response_field'], inputs['recaptcha_challenge_field'] = recaptcha.challenge()
         else:
-            self.fail(_("Invalid captcha"))
+            m = re.search(self.CAPTCHA_PATTERN, self.data)
+            if m is None:
+                self.error(_("Captcha pattern not found"))
+            captcha_url = m.group(1)
+            inputs['captcha_response'] = self.captcha.decrypt(captcha_url)
+
+        self.log_debug(inputs)
+
+        self.data = self.load(self.url, post=inputs)
+
+        if '<div class="captcha-error">Incorrect, try again' in self.data:
+            self.retry_captcha()
+        else:
+            self.captcha.correct()
 
 
     def get_rt_update(self):
         rtUpdate = self.retrieve("rtUpdate")
-        if not rtUpdate:
-            if self.retrieve("version") is not self.__version__ \
-               or int(self.retrieve("timestamp", 0)) + 86400000 < timestamp():
-                #: that's right, we are even using jdownloader updates
-                rtUpdate = self.load("http://update0.jdownloader.org/pluginstuff/tbupdate.js")
-                rtUpdate = self.decrypt(rtUpdate.splitlines()[1])
-                #: But we still need to fix the syntax to work with other engines than rhino
-                rtUpdate = re.sub(r'for each\(var (\w+) in(\[[^\]]+\])\)\{',
-                                  r'zza=\2;for(var zzi=0;zzi<zza.length;zzi++){\1=zza[zzi];', rtUpdate)
-                rtUpdate = re.sub(r"for\((\w+)=", r"for(var \1=", rtUpdate)
+        if rtUpdate:
+            return rtUpdate
 
-                self.store("rtUpdate", rtUpdate)
-                self.store("timestamp", timestamp())
-                self.store("version", self.__version__)
-            else:
-                self.log_error(_("Unable to download, wait for update..."))
-                self.temp_offline()
+        if self.retrieve("version") is not self.__version__ or \
+           int(self.retrieve("timestamp", 0)) + 86400000 < timestamp():
+            #: that's right, we are even using jdownloader updates
+            rtUpdate = self.load("http://update0.jdownloader.org/pluginstuff/tbupdate.js")
+            rtUpdate = self.decrypt(rtUpdate.splitlines()[1])
+            #: But we still need to fix the syntax to work with other engines than rhino
+            rtUpdate = re.sub(r'for each\(var (\w+) in(\[[^\]]+\])\)\{',
+                              r'zza=\2;for(var zzi=0;zzi<zza.length;zzi++){\1=zza[zzi];', rtUpdate)
+            rtUpdate = re.sub(r"for\((\w+)=", r"for(var \1=", rtUpdate)
+
+            self.store("rtUpdate", rtUpdate)
+            self.store("timestamp", timestamp())
+            self.store("version", self.__version__)
+        else:
+            self.log_error(_("Unable to download, wait for update..."))
+            self.temp_offline()
 
         return rtUpdate
 
@@ -121,15 +126,16 @@ class TurbobitNet(SimpleHoster):
     def get_download_url(self, rtUpdate):
         self.req.http.lastURL = self.url
 
-        m = re.search("(/\w+/timeout\.js\?\w+=)([^\"\'<>]+)", self.html)
-        if m:
+        m = re.search("(/\w+/timeout\.js\?\w+=)([^\"\'<>]+)", self.data)
+        if m is not None:
             url = "http://turbobit.net%s%s" % m.groups()
         else:
             url = "http://turbobit.net/files/timeout.js?ver=%s" % "".join(random.choice('0123456789ABCDEF') for _i in xrange(32))
 
         fun = self.load(url)
 
-        self.set_wait(65, False)
+        self.set_wait(65)
+        self.set_reconnect(False)
 
         for b in [1, 3]:
             self.jscode = "var id = \'%s\';var b = %d;var inn = \'%s\';%sout" % (
@@ -142,7 +148,7 @@ class TurbobitNet(SimpleHoster):
                     return "http://turbobit.net%s" % out.strip()
 
             except Exception, e:
-                self.log_error(e)
+                self.log_error(e, trace=True)
         else:
             if self.retries >= 2:
                 #: Retry with updated js

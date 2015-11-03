@@ -9,18 +9,23 @@ from module.plugins.internal.XFSHoster import XFSHoster, create_getInfo
 class UpleaCom(XFSHoster):
     __name__    = "UpleaCom"
     __type__    = "hoster"
-    __version__ = "0.12"
+    __version__ = "0.15"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?uplea\.com/dl/\w{15}'
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Uplea.com hoster plugin"""
     __license__     = "GPLv3"
-    __authors__     = [("Redleon", None),
+    __authors__     = [("Redleon"  , None),
                        ("GammaC0de", None)]
 
 
-    HOSTER_DOMAIN = "uplea.com"
+    PLUGIN_DOMAIN = "uplea.com"
 
     SIZE_REPLACEMENTS = [('ko','KB'), ('mo','MB'), ('go','GB'), ('Ko','KB'), ('Mo','MB'), ('Go','GB')]
 
@@ -42,19 +47,19 @@ class UpleaCom(XFSHoster):
 
 
     def handle_free(self, pyfile):
-        m = re.search(self.STEP_PATTERN, self.html)
+        m = re.search(self.STEP_PATTERN, self.data)
         if m is None:
             self.error(_("STEP_PATTERN not found"))
 
-        self.html = self.load(urlparse.urljoin("http://uplea.com/", m.group(1)))
+        self.data = self.load(urlparse.urljoin("http://uplea.com/", m.group(1)))
 
-        m = re.search(self.WAIT_PATTERN, self.html)
-        if m:
+        m = re.search(self.WAIT_PATTERN, self.data)
+        if m is not None:
             self.log_debug("Waiting %s seconds" % m.group(1))
             self.wait(m.group(1), True)
             self.retry()
 
-        m = re.search(self.LINK_PATTERN, self.html)
+        m = re.search(self.LINK_PATTERN, self.data)
         if m is None:
             self.error(_("LINK_PATTERN not found"))
 

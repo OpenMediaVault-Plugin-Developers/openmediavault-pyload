@@ -4,25 +4,26 @@ from __future__ import with_statement
 
 import os
 import re
-import traceback
 
 from module.plugins.internal.Crypter import Crypter
-from module.plugins.internal.Plugin import exists
-from module.utils import save_join as fs_join
+from module.plugins.internal.utils import encode, exists, fs_join
 
 
 class Container(Crypter):
     __name__    = "Container"
     __type__    = "container"
-    __version__ = "0.06"
-    __status__  = "testing"
+    __version__ = "0.09"
+    __status__  = "stable"
 
     __pattern__ = r'^unmatchable$'
-    __config__  = []  #: [("name", "type", "desc", "default")]
+    __config__  = [("activated"            , "bool", "Activated"                          , True),
+                   ("use_subfolder"        , "bool", "Save package to subfolder"          , True),
+                   ("subfolder_per_package", "bool", "Create a subfolder for each package", True)]
 
     __description__ = """Base container decrypter plugin"""
     __license__     = "GPLv3"
-    __authors__     = [("mkaay", "mkaay@mkaay.de")]
+    __authors__     = [("mkaay"         , "mkaay@mkaay.de"   ),
+                       ("Walter Purcaro", "vuolter@gmail.com")]
 
 
     def process(self, pyfile):
@@ -35,18 +36,13 @@ class Container(Crypter):
 
         self.delete_tmp()
 
-        if self.urls:
+        if self.links:
             self._generate_packages()
 
         elif not self.packages:
             self.error(_("No link grabbed"), "decrypt")
 
         self._create_packages()
-
-
-    #: Deprecated method, use `_load2disk` instead (Remove in 0.4.10)
-    def loadToDisk(self, *args, **kwargs):
-        return self._load2disk(*args, **kwargs)
 
 
     def _load2disk(self):
@@ -60,23 +56,21 @@ class Container(Crypter):
             self.pyfile.url = fs_join(self.pyload.config.get("general", "download_folder"), self.pyfile.name)
             try:
                 with open(self.pyfile.url, "wb") as f:
-                    f.write(content)
+                    f.write(encode(content))
 
             except IOError, e:
-                self.fail(str(e))  #@TODO: Remove `str` in 0.4.10
+                self.fail(e)
 
         else:
             self.pyfile.name = os.path.basename(self.pyfile.url)
+
             if not exists(self.pyfile.url):
                 if exists(fs_join(pypath, self.pyfile.url)):
                     self.pyfile.url = fs_join(pypath, self.pyfile.url)
                 else:
                     self.fail(_("File not exists"))
-
-
-    #: Deprecated method, use `delete_tmp` instead (Remove in 0.4.10)
-    def deleteTmp(self, *args, **kwargs):
-        return self.delete_tmp(*args, **kwargs)
+            else:
+                self.data = self.pyfile.url  #@NOTE: ???
 
 
     def delete_tmp(self):
@@ -86,6 +80,4 @@ class Container(Crypter):
         try:
             os.remove(self.pyfile.url)
         except OSError, e:
-            self.log_warning(_("Error removing: %s") % self.pyfile.url, e)
-            if self.pyload.debug:
-                traceback.print_exc()
+            self.log_warning(_("Error removing `%s`") % self.pyfile.url, e)

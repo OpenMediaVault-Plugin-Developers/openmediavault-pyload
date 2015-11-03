@@ -12,11 +12,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class UploadheroCom(SimpleHoster):
     __name__    = "UploadheroCom"
     __type__    = "hoster"
-    __version__ = "0.19"
+    __version__ = "0.21"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?uploadhero\.com?/dl/\w+'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """UploadHero.co plugin"""
     __license__     = "GPLv3"
@@ -40,27 +44,27 @@ class UploadheroCom(SimpleHoster):
 
 
     def handle_free(self, pyfile):
-        m = re.search(self.CAPTCHA_PATTERN, self.html)
+        m = re.search(self.CAPTCHA_PATTERN, self.data)
         if m is None:
             self.error(_("Captcha not found"))
 
-        captcha = self.captcha.decrypt(urlparse.urljoin("http://uploadhero.co", m.group(1)))
+        captcha = self.captcha.decrypt(urlparse.urljoin("http://uploadhero.co/", m.group(1)))
 
-        self.html = self.load(pyfile.url,
+        self.data = self.load(pyfile.url,
                               get={'code': captcha})
 
-        m = re.search(self.LINK_FREE_PATTERN, self.html)
-        if m:
+        m = re.search(self.LINK_FREE_PATTERN, self.data)
+        if m is not None:
             self.link = m.group(1) or m.group(2)
             self.wait(50)
 
 
     def check_errors(self):
-        m = re.search(self.IP_BLOCKED_PATTERN, self.html)
-        if m:
-            self.html = self.load(urlparse.urljoin("http://uploadhero.co", m.group(1)))
+        m = re.search(self.IP_BLOCKED_PATTERN, self.data)
+        if m is not None:
+            self.data = self.load(urlparse.urljoin("http://uploadhero.co/", m.group(1)))
 
-            m = re.search(self.IP_WAIT_PATTERN, self.html)
+            m = re.search(self.IP_WAIT_PATTERN, self.data)
             wait_time = (int(m.group(1)) * 60 + int(m.group(2))) if m else 5 * 60
             self.wait(wait_time, True)
             self.retry()

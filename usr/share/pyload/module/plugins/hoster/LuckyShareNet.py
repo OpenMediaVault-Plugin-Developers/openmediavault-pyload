@@ -2,7 +2,7 @@
 
 import re
 
-from module.common.json_layer import json_loads
+from module.plugins.internal.utils import json
 from module.plugins.captcha.ReCaptcha import ReCaptcha
 from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 
@@ -10,11 +10,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class LuckyShareNet(SimpleHoster):
     __name__    = "LuckyShareNet"
     __type__    = "hoster"
-    __version__ = "0.08"
+    __version__ = "0.12"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?luckyshare\.net/(?P<ID>\d{10,})'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """LuckyShare.net hoster plugin"""
     __license__     = "GPLv3"
@@ -29,15 +33,15 @@ class LuckyShareNet(SimpleHoster):
         if 'AJAX Error' in rep:
             html = self.load(self.pyfile.url)
             m = re.search(r"waitingtime = (\d+);", html)
-            if m:
+            if m is not None:
                 seconds = int(m.group(1))
                 self.log_debug("You have to wait %d seconds between free downloads" % seconds)
-                self.retry(wait_time=seconds)
+                self.retry(wait=seconds)
             else:
                 self.error(_("Unable to detect wait time between free downloads"))
         elif 'Hash expired' in rep:
-            self.retry(reason=_("Hash expired"))
-        return json_loads(rep)
+            self.retry(msg=_("Hash expired"))
+        return json.loads(rep)
 
 
     #@TODO: There should be a filesize limit for free downloads
@@ -47,29 +51,25 @@ class LuckyShareNet(SimpleHoster):
 
         self.log_debug("JSON: " + rep)
 
-        json = self.parse_json(rep)
-        self.wait(json['time'])
+        jso = self.parse_json(rep)
+        self.wait(jso['time'])
 
         recaptcha = ReCaptcha(self)
 
-        for _i in xrange(5):
-            response, challenge = recaptcha.challenge()
-            rep = self.load(r"http://luckyshare.net/download/verify/challenge/%s/response/%s/hash/%s" %
-                            (challenge, response, json['hash']))
-            self.log_debug("JSON: " + rep)
-            if 'link' in rep:
-                json.update(self.parse_json(rep))
-                self.captcha.correct()
-                break
-            elif 'Verification failed' in rep:
-                self.captcha.invalid()
-            else:
-                self.error(_("Unable to get downlaod link"))
+        response, challenge = recaptcha.challenge()
+        rep = self.load(r"http://luckyshare.net/download/verify/challenge/%s/response/%s/hash/%s" %
+                        (challenge, response, jso['hash']))
 
-        if not json['link']:
-            self.fail(_("No Download url retrieved/all captcha attempts failed"))
+        self.log_debug("JSON: " + rep)
 
-        self.link = json['link']
+        if 'Verification failed' in rep:
+            self.retry_captcha()
+
+        elif 'link' in rep:
+            self.captcha.correct()
+            jso.update(self.parse_json(rep))
+            if jso['link']:
+                self.link = jso['link']
 
 
 getInfo = create_getInfo(LuckyShareNet)

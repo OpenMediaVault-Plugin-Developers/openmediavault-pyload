@@ -9,11 +9,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class WebshareCz(SimpleHoster):
     __name__    = "WebshareCz"
     __type__    = "hoster"
-    __version__ = "0.19"
+    __version__ = "0.22"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?(en\.)?webshare\.cz/(?:#/)?file/(?P<ID>\w+)'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """WebShare.cz hoster plugin"""
     __license__     = "GPLv3"
@@ -23,25 +27,23 @@ class WebshareCz(SimpleHoster):
 
     @classmethod
     def api_info(cls, url):
-        info = super(WebshareCz, cls).api_info(url)
+        info = {}
+        api  = get_url("https://webshare.cz/api/file_info/",
+                       post={'ident': re.match(cls.__pattern__, url).group('ID'),
+                             'wst'  : ""})
 
-        info['pattern'] = re.match(cls.__pattern__, url).groupdict()
-
-        api_data = get_url("https://webshare.cz/api/file_info/",
-                           post={'ident': info['pattern']['ID'], 'wst': ""})
-
-        if not re.search(r'<status>OK', api_data):
+        if not re.search(r'<status>OK', api):
             info['status'] = 1
         else:
             info['status'] = 2
-            info['name']   = re.search(r'<name>(.+?)<', api_data).group(1)
-            info['size']   = re.search(r'<size>(.+?)<', api_data).group(1)
+            info['name']   = re.search(r'<name>(.+?)<', api).group(1)
+            info['size']   = re.search(r'<size>(.+?)<', api).group(1)
 
         return info
 
 
     def handle_free(self, pyfile):
-        wst = self.account.get_data(self.user).get('wst', None) if self.account else None
+        wst = self.account.get_data('wst') if self.account else None
 
         api_data = get_url("https://webshare.cz/api/file_link/",
                            post={'ident': self.info['pattern']['ID'], 'wst': wst})
@@ -49,7 +51,7 @@ class WebshareCz(SimpleHoster):
         self.log_debug("API data: " + api_data)
 
         m = re.search('<link>(.+)</link>', api_data)
-        if m:
+        if m is not None:
             self.link = m.group(1)
 
 

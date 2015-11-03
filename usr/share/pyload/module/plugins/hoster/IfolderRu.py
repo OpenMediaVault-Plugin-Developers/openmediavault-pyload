@@ -8,11 +8,15 @@ from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
 class IfolderRu(SimpleHoster):
     __name__    = "IfolderRu"
     __type__    = "hoster"
-    __version__ = "0.40"
+    __version__ = "0.42"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www)?(files\.)?(ifolder\.ru|metalarea\.org|rusfolder\.(com|net|ru))/(files/)?(?P<ID>\d+)'
-    __config__  = [("use_premium", "bool", "Use premium account if available", True)]
+    __config__  = [("activated"   , "bool", "Activated"                                        , True),
+                   ("use_premium" , "bool", "Use premium account if available"                 , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails"       , True),
+                   ("chk_filesize", "bool", "Check file size"                                  , True),
+                   ("max_wait"    , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
 
     __description__ = """Ifolder.ru hoster plugin"""
     __license__     = "GPLv3"
@@ -41,27 +45,22 @@ class IfolderRu(SimpleHoster):
 
     def handle_free(self, pyfile):
         url = "http://rusfolder.com/%s" % self.info['pattern']['ID']
-        self.html = self.load("http://rusfolder.com/%s" % self.info['pattern']['ID'])
+        self.data = self.load("http://rusfolder.com/%s" % self.info['pattern']['ID'])
         self.get_fileInfo()
 
-        session_id = re.search(self.SESSION_ID_PATTERN, self.html).groups()
-
+        session_id = re.search(self.SESSION_ID_PATTERN, self.data).groups()
         captcha_url = "http://ints.rusfolder.com/random/images/?session=%s" % session_id
-        for _i in xrange(5):
-            action, inputs = self.parse_html_form('id="download-step-one-form"')
-            inputs['confirmed_number'] = self.captcha.decrypt(captcha_url, cookies=True)
-            inputs['action'] = '1'
-            self.log_debug(inputs)
 
-            self.html = self.load(url, post=inputs)
-            if self.WRONG_CAPTCHA_PATTERN in self.html:
-                self.captcha.invalid()
-            else:
-                break
-        else:
-            self.fail(_("Invalid captcha"))
+        action, inputs = self.parse_html_form('id="download-step-one-form"')
+        inputs['confirmed_number'] = self.captcha.decrypt(captcha_url, cookies=True)
+        inputs['action'] = '1'
+        self.log_debug(inputs)
 
-        self.link = re.search(self.LINK_FREE_PATTERN, self.html).group(1)
+        self.data = self.load(url, post=inputs)
+        if self.WRONG_CAPTCHA_PATTERN in self.data:
+            self.retry_captcha()
+
+        self.link = re.search(self.LINK_FREE_PATTERN, self.data).group(1)
 
 
 getInfo = create_getInfo(IfolderRu)

@@ -6,7 +6,7 @@ from module.plugins.internal.OCR import OCR
 class ShareonlineBiz(OCR):
     __name__    = "ShareonlineBiz"
     __type__    = "ocr"
-    __version__ = "0.14"
+    __version__ = "0.15"
     __status__  = "testing"
 
     __description__ = """Shareonline.biz ocr plugin"""
@@ -14,6 +14,7 @@ class ShareonlineBiz(OCR):
     __authors__     = [("RaNaN", "RaNaN@pyload.org")]
 
 
+    #: Tesseract at 60%
     def recognize(self, image):
         self.load_image(image)
         self.to_greyscale()
@@ -32,5 +33,3 @@ class ShareonlineBiz(OCR):
             final += self.result_captcha
 
         return final
-
-        #: Tesseract at 60%

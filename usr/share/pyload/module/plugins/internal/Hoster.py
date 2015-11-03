@@ -2,353 +2,164 @@
 
 from __future__ import with_statement
 
-import inspect
+import mimetypes
 import os
-import random
-import time
-import traceback
-import urlparse
+import re
 
-from module.plugins.internal.Captcha import Captcha
-from module.plugins.internal.Plugin import (Plugin, Abort, Fail, Reconnect, Retry, Skip,
-                                            chunks, encode, exists, fixurl as _fixurl, replace_patterns,
-                                            seconds_to_midnight, set_cookie, set_cookies, parse_html_form,
-                                            parse_html_tag_attr_value, timestamp)
-from module.utils import fs_decode, fs_encode, save_join as fs_join, save_path as safe_filename
+from module.network.HTTPRequest import BadHeader
+from module.plugins.internal.Base import Base, create_getInfo, parse_fileInfo
+from module.plugins.internal.Plugin import Fail, Retry
+from module.plugins.internal.utils import encode, exists, fixurl, fs_join, parse_name
 
 
-#@TODO: Remove in 0.4.10
-def parse_fileInfo(klass, url="", html=""):
-    info = klass.get_info(url, html)
-    return info['name'], info['size'], info['status'], info['url']
-
-
-#@TODO: Remove in 0.4.10
-def getInfo(urls):
-    #: result = [ .. (name, size, status, url) .. ]
-    pass
-
-
-#@TODO: Remove in 0.4.10
-def create_getInfo(klass):
-    def get_info(urls):
-        for url in urls:
-            if hasattr(klass, "URL_REPLACEMENTS"):
-                url = replace_patterns(url, klass.URL_REPLACEMENTS)
-            yield parse_fileInfo(klass, url)
-
-    return get_info
-
-
-class Hoster(Plugin):
+class Hoster(Base):
     __name__    = "Hoster"
     __type__    = "hoster"
-    __version__ = "0.19"
-    __status__  = "testing"
+    __version__ = "0.45"
+    __status__  = "stable"
 
     __pattern__ = r'^unmatchable$'
-    __config__  = []  #: [("name", "type", "desc", "default")]
+    __config__  = [("activated"   , "bool", "Activated"                                 , True),
+                   ("use_premium" , "bool", "Use premium account if available"          , True),
+                   ("fallback"    , "bool", "Fallback to free download if premium fails", True),
+                   ("chk_filesize", "bool", "Check file size"                           , True)]
 
     __description__ = """Base hoster plugin"""
     __license__     = "GPLv3"
-    __authors__     = [("RaNaN"         , "RaNaN@pyload.org" ),
-                       ("spoob"         , "spoob@pyload.org" ),
-                       ("mkaay"         , "mkaay@mkaay.de"   ),
-                       ("Walter Purcaro", "vuolter@gmail.com")]
+    __authors__     = [("Walter Purcaro", "vuolter@gmail.com")]
 
 
-    def __init__(self, pyfile):
-        self._init(pyfile.m.core)
-
-        #: Engage wan reconnection
-        self.wantReconnect = False  #@TODO: Change to `want_reconnect` in 0.4.10
-
+    def init_base(self):
         #: Enable simultaneous processing of multiple downloads
-        self.multiDL = True  #@TODO: Change to `multi_dl` in 0.4.10
-        self.limitDL = 0     #@TODO: Change to `limit_dl` in 0.4.10
+        self.limitDL = 0  #@TODO: Change to `limit_dl` in 0.4.10
 
-        #: time.time() + wait in seconds
-        self.wait_until = 0
-        self.waiting    = False
+        #:
+        self.chunk_limit = None
 
-        #: Account handler instance, see :py:class:`Account`
-        self.account = None
-        self.user    = None
-        self.req     = None  #: Browser instance, see `network.Browser`
-
-        #: Associated pyfile instance, see `PyFile`
-        self.pyfile = pyfile
-
-        self.thread = None  #: Holds thread in future
+        #:
+        self.resume_download = False
 
         #: Location where the last call to download was saved
-        self.last_download = ""
+        self.last_download = None
 
         #: Re match of the last call to `checkDownload`
         self.last_check = None
 
-        #: Js engine, see `JsEngine`
-        self.js = self.pyload.js
-
-        #: Captcha stuff
-        self.captcha = Captcha(self)
-
-        #: Some plugins store html code here
-        self.html = None
-
-        #: Dict of the amount of retries already made
-        self.retries    = {}
-        self.retry_free = False  #@TODO: Recheck in 0.4.10
-
-        self._setup()
-        self.init()
+        #: Restart flag
+        self.restart_free = False  #@TODO: Recheck in 0.4.10
 
 
-    @classmethod
-    def get_info(cls, url="", html=""):
-        url   = _fixurl(url)
-        url_p = urlparse.urlparse(url)
-        return {'name'  : (url_p.path.split('/')[-1] or
-                            url_p.query.split('=', 1)[::-1][0].split('&', 1)[0] or
-                                url_p.netloc.split('.', 1)[0]),
-                'size'  : 0,
-                'status': 3 if url else 8,
-                'url'   : url}
+    def setup_base(self):
+        self.last_download = None
+        self.last_check    = None
+        self.restart_free  = False
 
-
-    def init(self):
-        """
-        Initialize the plugin (in addition to `__init__`)
-        """
-        pass
-
-
-    def setup(self):
-        """
-        Setup for enviroment and other things, called before downloading (possibly more than one time)
-        """
-        pass
-
-
-    def _setup(self):
         if self.account:
-            self.req             = self.pyload.requestFactory.getRequest(self.__name__, self.user)
             self.chunk_limit     = -1  #: -1 for unlimited
             self.resume_download = True
-            self.premium         = self.account.is_premium(self.user)
         else:
-            self.req             = self.pyload.requestFactory.getRequest(self.__name__)
             self.chunk_limit     = 1
             self.resume_download = False
-            self.premium         = False
 
 
     def load_account(self):
-        if self.req:
-            self.req.close()
-
-        if not self.account:
-            self.account = self.pyload.accountManager.getAccountPlugin(self.__name__)
-
-        if self.account:
-            if not self.user:
-                self.user = self.account.select()[0]
-
-            if not self.user or not self.account.is_logged(self.user, True):
-                self.account = False
-
-
-    def preprocessing(self, thread):
-        """
-        Handles important things to do before starting
-        """
-        self.thread = thread
-
-        if self.retry_free:
+        if self.restart_free:
             self.account = False
+            self.user    = None  #@TODO: Remove in 0.4.10
         else:
-            self.load_account()  #@TODO: Move to PluginThread in 0.4.10
-            self.retry_free = False
+            super(Hoster, self).load_account()
+            # self.restart_free = False
 
+
+    def _process(self, thread):
+        self.log_debug("Plugin version: " + self.__version__)
+        self.log_debug("Plugin status: " + self.__status__)
+
+        if self.__status__ is "broken":
+            self.fail(_("Plugin is temporarily unavailable"))
+
+        elif self.__status__ is "testing":
+            self.log_warning(_("Plugin may be unstable"))
+
+        self.thread = thread
         self._setup()
-        self.setup()
 
-        self.pyload.hookManager.downloadPreparing(self.pyfile)  #@TODO: Recheck in 0.4.10
-
-        if self.pyfile.abort:
-            self.abort()
+        # self.pyload.hookManager.downloadPreparing(self.pyfile)  #@TODO: Recheck in 0.4.10
+        self.check_status()
 
         self.pyfile.setStatus("starting")
-        self.log_debug("PROCESS URL " + self.pyfile.url, "PLUGIN VERSION %s" % self.__version__)
 
-        return self.process(self.pyfile)
+        try:
+            self.process(self.pyfile)
+            self.check_status()
+            self.check_download()
 
+        except Fail, e:  #@TODO: Move to PluginThread in 0.4.10
+            if self.get_config('fallback', True) and self.premium:
+                self.log_warning(_("Premium download failed"), e)
+                self.restart(premium=False)
 
-    def process(self, pyfile):
-        """
-        The 'main' method of every plugin, you **have to** overwrite it
-        """
-        raise NotImplementedError
-
-
-    def set_reconnect(self, reconnect):
-        reconnect = bool(reconnect)
-
-        self.log_info(_("RECONNECT ") + ("enabled" if reconnect else "disabled"))
-        self.log_debug("Previous wantReconnect: %s" % self.wantReconnect)
-
-        self.wantReconnect = reconnect
-
-
-    def set_wait(self, seconds, reconnect=None):
-        """
-        Set a specific wait time later used with `wait`
-
-        :param seconds: wait time in seconds
-        :param reconnect: True if a reconnect would avoid wait time
-        """
-        wait_time  = max(int(seconds), 1)
-        wait_until = time.time() + wait_time + 1
-
-        self.log_info(_("WAIT %d seconds") % wait_time)
-        self.log_debug("Previous waitUntil: %f" % self.pyfile.waitUntil)
-
-        self.pyfile.waitUntil = wait_until
-
-        if reconnect is not None:
-            self.set_reconnect(reconnect)
-
-
-    def wait(self, seconds=None, reconnect=None):
-        """
-        Waits the time previously set
-        """
-        pyfile = self.pyfile
-
-        if seconds is not None:
-            self.set_wait(seconds)
-
-        if reconnect is not None:
-            self.set_reconnect(reconnect)
-
-        self.waiting = True
-
-        status = pyfile.status  #@NOTE: Remove in 0.4.10
-        pyfile.setStatus("waiting")
-
-        if not self.wantReconnect or self.account:
-            if self.account:
-                self.log_warning("Ignore reconnection due logged account")
-
-            while pyfile.waitUntil > time.time():
-                if pyfile.abort:
-                    self.abort()
-
-                time.sleep(2)
-
-        else:
-            while pyfile.waitUntil > time.time():
-                if pyfile.abort:
-                    self.abort()
-
-                if self.thread.m.reconnecting.isSet():
-                    self.waiting = False
-                    self.wantReconnect = False
-                    raise Reconnect
-
-                self.thread.m.reconnecting.wait(2)
-                time.sleep(2)
-
-        self.waiting = False
-        pyfile.status = status  #@NOTE: Remove in 0.4.10
-
-
-    def skip(self, reason=""):
-        """
-        Skip and give reason
-        """
-        raise Skip(encode(reason))  #@TODO: Remove `encode` in 0.4.10
-
-
-    def abort(self, reason=""):
-        """
-        Abort and give reason
-        """
-        #@TODO: Remove in 0.4.10
-        if reason:
-            self.pyfile.error = encode(reason)
-
-        raise Abort
-
-
-    def offline(self, reason=""):
-        """
-        Fail and indicate file is offline
-        """
-        #@TODO: Remove in 0.4.10
-        if reason:
-            self.pyfile.error = encode(reason)
-
-        raise Fail("offline")
-
-
-    def temp_offline(self, reason=""):
-        """
-        Fail and indicates file ist temporary offline, the core may take consequences
-        """
-        #@TODO: Remove in 0.4.10
-        if reason:
-            self.pyfile.error = encode(reason)
-
-        raise Fail("temp. offline")
-
-
-    def retry(self, max_tries=5, wait_time=1, reason=""):
-        """
-        Retries and begin again from the beginning
-
-        :param max_tries: number of maximum retries
-        :param wait_time: time to wait in seconds
-        :param reason: reason for retrying, will be passed to fail if max_tries reached
-        """
-        id = inspect.currentframe().f_back.f_lineno
-        if id not in self.retries:
-            self.retries[id] = 0
-
-        if 0 < max_tries <= self.retries[id]:
-            self.fail(reason or _("Max retries reached"))
-
-        self.wait(wait_time, False)
-
-        self.retries[id] += 1
-        raise Retry(encode(reason))  #@TODO: Remove `encode` in 0.4.10
-
-
-    def restart(self, reason=None, nopremium=False):
-        if not reason:
-            reason = _("Fallback to free download") if nopremium else _("Restart")
-
-        if nopremium:
-            if self.premium:
-                self.retry_free = True
             else:
-                self.fail("%s | %s" % (reason, _("Download was already free")))
-
-        raise Retry(encode(reason))  #@TODO: Remove `encode` in 0.4.10
+                raise Fail(encode(e))
 
 
-    def fixurl(self, url):
-        url = _fixurl(url)
+    def isdownload(self, url, resume=None, redirect=True):
+        link      = False
+        maxredirs = 10
 
-        if not urlparse.urlparse(url).scheme:
-            url_p = urlparse.urlparse(self.pyfile.url)
-            baseurl = "%s://%s" % (url_p.scheme, url_p.netloc)
-            url = urlparse.urljoin(baseurl, url)
+        if resume is None:
+            resume = self.resume_download
 
-        return url
+        if type(redirect) is int:
+            maxredirs = max(redirect, 1)
+
+        elif redirect:
+            maxredirs = self.get_config("maxredirs", default=maxredirs, plugin="UserAgentSwitcher")
+
+        for i in xrange(maxredirs):
+            self.log_debug("Redirect #%d to: %s" % (i, url))
+
+            header = self.load(url, just_header=True)
+
+            if 'content-disposition' in header:
+                link = url
+
+            elif header.get('location'):
+                location = self.fixurl(header.get('location'), url)
+                code     = header.get('code')
+
+                if code == 302:
+                    link = location
+
+                elif code == 301:
+                    url = location
+                    if redirect:
+                        continue
+
+                if resume:
+                    url = location
+                    continue
+
+            else:
+                mimetype    = ""
+                contenttype = header.get('content-type')
+                extension   = os.path.splitext(parse_name(url))[-1]
+
+                if contenttype:
+                    mimetype = contenttype.split(';')[0].strip()
+
+                elif extension:
+                    mimetype = mimetypes.guess_type(extension, False)[0] or "application/octet-stream"
+
+                if mimetype and (link or 'html' not in mimetype):
+                    link = url
+                else:
+                    link = False
+
+            return link
 
 
-    def download(self, url, get={}, post={}, ref=True, cookies=True, disposition=True):
+    def download(self, url, get={}, post={}, ref=True, cookies=True, disposition=True, resume=None, chunks=None):
         """
         Downloads the content at url to download folder
 
@@ -361,78 +172,136 @@ class Hoster(Plugin):
         the filename will be changed if needed
         :return: The location where the file was saved
         """
-        if self.pyfile.abort:
-            self.abort()
-
-        url = self.fixurl(url)
-
-        if not url or not isinstance(url, basestring):
-            self.fail(_("No url given"))
+        self.check_status()
 
         if self.pyload.debug:
             self.log_debug("DOWNLOAD URL " + url,
-                           *["%s=%s" % (key, val) for key, val in locals().items() if key not in ("self", "url")])
+                           *["%s=%s" % (key, val) for key, val in locals().items() if key not in ("self", "url", "_[1]")])
 
-        name = _fixurl(self.pyfile.name)
-        self.pyfile.name = urlparse.urlparse(name).path.split('/')[-1] or name
+        dl_url      = self.fixurl(url)
+        dl_basename = parse_name(self.pyfile.name)
+
+        self.pyfile.name = dl_basename
 
         self.captcha.correct()
-        self.check_for_same_files()
+
+        if self.pyload.config.get("download", "skip_existing"):
+            self.check_filedupe()
 
         self.pyfile.setStatus("downloading")
 
-        download_folder   = self.pyload.config.get("general", "download_folder")
-        download_location = fs_join(download_folder, self.pyfile.package().folder)
+        dl_folder   = self.pyload.config.get("general", "download_folder")
+        dl_dirname  = os.path.join(dl_folder, self.pyfile.package().folder)
+        dl_filename = os.path.join(dl_dirname, dl_basename)
 
-        if not exists(download_location):
+        dl_dir  = encode(dl_dirname)
+        dl_file = encode(dl_filename)  #@TODO: Move safe-filename check to HTTPDownload in 0.4.10
+
+        if not exists(dl_dir):
             try:
-                os.makedirs(download_location)
+                os.makedirs(dl_dir)
+
             except Exception, e:
                 self.fail(e)
 
-        self.set_permissions(download_location)
+        self.set_permissions(dl_dir)
 
-        location = fs_decode(download_location)
-        filename = os.path.join(location, safe_filename(self.pyfile.name))  #@TODO: Move `safe_filename` check to HTTPDownload in 0.4.10
+        self.pyload.hookManager.dispatchEvent("download_start", self.pyfile, dl_url, dl_filename)
+        self.check_status()
 
-        self.pyload.hookManager.dispatchEvent("download_start", self.pyfile, url, filename)
+        dl_chunks   = self.pyload.config.get("download", "chunks")
+        chunk_limit = chunks or self.chunk_limit or -1
 
-        if self.pyfile.abort:
-            self.abort()
+        if dl_chunks is -1 or chunk_limit is -1:
+            chunks = max(dl_chunks, chunk_limit)
+        else:
+            chunks = min(dl_chunks, chunk_limit)
+
+        resume = self.resume_download if resume is None else bool(resume)
 
         try:
-            newname = self.req.httpDownload(url, filename, get=get, post=post, ref=ref, cookies=cookies,
-                                            chunks=self.get_chunk_count(), resume=self.resume_download,
-                                            progressNotify=self.pyfile.setProgress, disposition=disposition)
+            newname = self.req.httpDownload(dl_url, dl_file, get=get, post=post, ref=ref,
+                                            cookies=cookies, chunks=chunks, resume=resume,
+                                            progressNotify=self.pyfile.setProgress,
+                                            disposition=disposition)
+
+        except BadHeader, e:
+            self.req.code = e.code
+            raise BadHeader(e)
+
         finally:
             self.pyfile.size = self.req.size
 
+        if self.req.code in (404, 410):
+            bad_file = fs_join(dl_dirname, newname)
+            try:
+                os.remove(bad_file)
+
+            except OSError, e:
+                self.log_debug(_("Error removing `%s`") % bad_file, e)
+
+            else:
+                return ""
+
         #@TODO: Recheck in 0.4.10
         if disposition and newname:
-            finalname = urlparse.urlparse(newname).path.split('/')[-1].split(' filename*=')[0]
+            safename = parse_name(newname.split(' filename*=')[0])
 
-            if finalname != newname != self.pyfile.name:
+            if safename != newname:
                 try:
-                    os.rename(fs_join(location, newname), fs_join(location, finalname))
+                    old_file = fs_join(dl_dirname, newname)
+                    new_file = fs_join(dl_dirname, safename)
+                    os.rename(old_file, new_file)
 
                 except OSError, e:
-                    self.log_warning(_("Error renaming `%s` to `%s`") % (newname, finalname), e)
-                    finalname = newname
+                    self.log_warning(_("Error renaming `%s` to `%s`")
+                                     % (newname, safename), e)
+                    safename = newname
 
-                self.log_info(_("`%s` saved as `%s`") % (self.pyfile.name, finalname))
-                self.pyfile.name = finalname
-                filename = os.path.join(location, finalname)
+                self.log_info(_("`%s` saved as `%s`") % (self.pyfile.name, safename))
 
-        self.set_permissions(fs_encode(filename))
+            self.pyfile.name = safename
 
-        self.last_download = filename
+            dl_filename = os.path.join(dl_dirname, safename)
+            dl_file = encode(dl_filename)
 
-        return self.last_download
+        self.set_permissions(dl_file)
+
+        self.last_download = dl_filename
+
+        return dl_filename
 
 
-    def check_download(self, rules, delete=False, file_size=0, size_tolerance=1024, read_size=1048576):
+    def check_filesize(self, file_size, size_tolerance=1024):
         """
-        Checks the content of the last downloaded file, re match is saved to `lastCheck`
+        Checks the file size of the last downloaded file
+
+        :param file_size: expected file size
+        :param size_tolerance: size check tolerance
+        """
+        if not self.last_download:
+            return
+
+        dl_location = encode(self.last_download)
+        dl_size     = os.stat(dl_location).st_size
+
+        if dl_size < 1:
+            self.fail(_("Empty file"))
+
+        elif file_size > 0:
+            diff = abs(file_size - dl_size)
+
+            if diff > size_tolerance:
+                self.fail(_("File size mismatch | Expected file size: %s | Downloaded file size: %s")
+                          % (file_size, dl_size))
+
+            elif diff != 0:
+                self.log_warning(_("File size is not equal to expected size"))
+
+
+    def check_file(self, rules, delete=False, read_size=1048576, file_size=0, size_tolerance=1024):
+        """
+        Checks the content of the last downloaded file, re match is saved to `last_check`
 
         :param rules: dict with names and rules to match (compiled regexp or strings)
         :param delete: delete if matched
@@ -442,29 +311,13 @@ class Hoster(Plugin):
         :return: dictionary key of the first rule that matched
         """
         do_delete = False
-        last_download = fs_encode(self.last_download)
+        last_download = encode(self.last_download)  #@TODO: Recheck in 0.4.10
 
         if not self.last_download or not exists(last_download):
-            self.last_download = ""
             self.fail(self.pyfile.error or _("No file downloaded"))
 
         try:
-            download_size = os.stat(last_download).st_size
-
-            if download_size < 1:
-                do_delete = True
-                self.fail(_("Empty file"))
-
-            elif file_size > 0:
-                diff = abs(file_size - download_size)
-
-                if diff > size_tolerance:
-                    do_delete = True
-                    self.fail(_("File size mismatch | Expected file size: %s | Downloaded file size: %s")
-                              % (file_size, download_size))
-
-                elif diff != 0:
-                    self.log_warning(_("File size is not equal to expected size"))
+            self.check_filesize(file_size, size_tolerance)
 
             with open(last_download, "rb") as f:
                 content = f.read(read_size)
@@ -479,7 +332,7 @@ class Hoster(Plugin):
 
                 elif hasattr(rule, "search"):
                     m = rule.search(content)
-                    if m:
+                    if m is not None:
                         do_delete = True
                         self.last_check = m
                         return name
@@ -489,134 +342,53 @@ class Hoster(Plugin):
                     os.remove(last_download)
 
                 except OSError, e:
-                    self.log_warning(_("Error removing: %s") % last_download, e)
-                    if self.pyload.debug:
-                        traceback.print_exc()
+                    self.log_warning(_("Error removing `%s`") % last_download, e)
 
                 else:
-                    self.last_download = ""
-                    self.log_info(_("File deleted"))
+                    self.log_info(_("File deleted: ") + self.last_download)
+                    self.last_download = ""  #: Recheck in 0.4.10
 
 
-    def direct_link(self, url, follow_location=None):
-        link = ""
+    def check_download(self):
+        self.log_info(_("Checking downloaded file..."))
 
-        if follow_location is None:
-            redirect = 1
+        if self.captcha.task and not self.last_download:
+            self.retry_captcha()
 
-        elif type(follow_location) is int:
-            redirect = max(follow_location, 1)
+        elif self.check_file({'Empty file': re.compile(r'\A((.|)(\2|\s)*)\Z')},
+                             delete=True):
+            self.error(_("Empty file"))
+
+        elif self.get_config('chk_filesize', False) and self.info.get('size'):
+            # 10485760 is 10MB, tolerance is used when comparing displayed size on the hoster website to real size
+            # For example displayed size can be 1.46GB for example, but real size can be 1.4649853GB
+            self.check_filesize(self.info['size'], size_tolerance=10485760)
 
         else:
-            redirect = self.get_config("maxredirs", 10, "UserAgentSwitcher")
-
-        for i in xrange(redirect):
-            try:
-                self.log_debug("Redirect #%d to: %s" % (i, url))
-                header = self.load(url, just_header=True)
-
-            except Exception:  #: Bad bad bad... rewrite this part in 0.4.10
-                res = self.load(url,
-                                just_header=True,
-                                req=self.pyload.requestFactory.getRequest())
-
-                header = {'code': req.code}
-                for line in res.splitlines():
-                    line = line.strip()
-                    if not line or ":" not in line:
-                        continue
-
-                    key, none, value = line.partition(":")
-                    key              = key.lower().strip()
-                    value            = value.strip()
-
-                    if key in header:
-                        if type(header[key]) is list:
-                            header[key].append(value)
-                        else:
-                            header[key] = [header[key], value]
-                    else:
-                        header[key] = value
-
-            if 'content-disposition' in header:
-                link = url
-
-            elif 'location' in header and header['location']:
-                location = header['location']
-
-                if not urlparse.urlparse(location).scheme:
-                    url_p    = urlparse.urlparse(url)
-                    baseurl  = "%s://%s" % (url_p.scheme, url_p.netloc)
-                    location = urlparse.urljoin(baseurl, location)
-
-                if 'code' in header and header['code'] == 302:
-                    link = location
-
-                if follow_location:
-                    url = location
-                    continue
-
-            else:
-                extension = os.path.splitext(urlparse.urlparse(url).path.split('/')[-1])[-1]
-
-                if 'content-type' in header and header['content-type']:
-                    mimetype = header['content-type'].split(';')[0].strip()
-
-                elif extension:
-                    mimetype = mimetypes.guess_type(extension, False)[0] or "application/octet-stream"
-
-                else:
-                    mimetype = ""
-
-                if mimetype and (link or 'html' not in mimetype):
-                    link = url
-                else:
-                    link = ""
-
-            break
-
-        else:
-            try:
-                self.log_error(_("Too many redirects"))
-            except Exception:
-                pass
-
-        return link
+            self.log_info(_("File is OK"))
 
 
-    def parse_html_form(self, attr_str="", input_names={}):
-        return parse_html_form(attr_str, self.html, input_names)
-
-
-    def check_traffic_left(self):
+    def check_traffic(self):
         if not self.account:
             return True
 
-        traffic = self.account.get_data(self.user, True)['trafficleft']
+        traffic = self.account.get_data('trafficleft')
 
         if traffic is None:
             return False
-        elif traffic == -1:
+
+        elif traffic is -1:
             return True
+
         else:
+            #@TODO: Rewrite in 0.4.10
             size = self.pyfile.size / 1024
-            self.log_info(_("Filesize: %s KiB, Traffic left for user %s: %s KiB") % (size, self.user, traffic))
+            self.log_info(_("Filesize: %s KiB") % size,
+                          _("Traffic left for user `%s`: %d KiB") % (self.account.user, traffic))
             return size <= traffic
 
 
-    def get_password(self):
-        """
-        Get the password the user provided in the package
-        """
-        return self.pyfile.package().password or ""
-
-
-    #: Deprecated method, use `check_for_same_files` instead (Remove in 0.4.10)
-    def checkForSameFiles(self, *args, **kwargs):
-        return self.check_for_same_files(*args, **kwargs)
-
-
-    def check_for_same_files(self, starting=False):
+    def check_filedupe(self):
         """
         Checks if same file was/is downloaded within same package
 
@@ -626,23 +398,32 @@ class Hoster(Plugin):
         pack = self.pyfile.package()
 
         for pyfile in self.pyload.files.cache.values():
-            if pyfile != self.pyfile and pyfile.name is self.pyfile.name and pyfile.package().folder is pack.folder:
-                if pyfile.status in (0, 12):  #: Finished or downloading
-                    self.skip(pyfile.pluginname)
-                elif pyfile.status in (5, 7) and starting:  #: A download is waiting/starting and was appenrently started before
-                    self.skip(pyfile.pluginname)
+            if pyfile is self.pyfile:
+                continue
 
-        download_folder = self.pyload.config.get("general", "download_folder")
-        location = fs_join(download_folder, pack.folder, self.pyfile.name)
+            if pyfile.name != self.pyfile.name or pyfile.package().folder != pack.folder:
+                continue
 
-        if starting and self.pyload.config.get("download", "skip_existing") and exists(location):
-            size = os.stat(location).st_size
-            if size >= self.pyfile.size:
-                self.skip("File exists")
+            if pyfile.status in (0, 5, 7, 12):  #: (finished, waiting, starting, downloading)
+                self.skip(pyfile.pluginname)
 
-        pyfile = self.pyload.db.findDuplicates(self.pyfile.id, self.pyfile.package().folder, self.pyfile.name)
+        dl_folder      = self.pyload.config.get("general", "download_folder")
+        package_folder = pack.folder if self.pyload.config.get("general", "folder_per_package") else ""
+        dl_location    = fs_join(dl_folder, package_folder, self.pyfile.name)
+
+        if not exists(dl_location):
+            return
+
+        pyfile = self.pyload.db.findDuplicates(self.pyfile.id, package_folder, self.pyfile.name)
         if pyfile:
-            if exists(location):
-                self.skip(pyfile[0])
+            self.skip(pyfile[0])
 
-            self.log_debug("File %s not skipped, because it does not exists." % self.pyfile.name)
+        size = os.stat(dl_location).st_size
+        if size >= self.pyfile.size:
+            self.skip(_("File exists"))
+
+
+    #: Deprecated method, use `check_filedupe` instead (Remove in 0.4.10)
+    def checkForSameFiles(self, *args, **kwargs):
+        if self.pyload.config.get("download", "skip_existing"):
+            return self.check_filedupe()

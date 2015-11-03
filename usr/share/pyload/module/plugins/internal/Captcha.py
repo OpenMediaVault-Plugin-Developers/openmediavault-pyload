@@ -4,16 +4,16 @@ from __future__ import with_statement
 
 import os
 import time
-import traceback
 
 from module.plugins.internal.Plugin import Plugin
+from module.plugins.internal.utils import encode
 
 
 class Captcha(Plugin):
     __name__    = "Captcha"
     __type__    = "captcha"
-    __version__ = "0.42"
-    __status__  = "testing"
+    __version__ = "0.47"
+    __status__  = "stable"
 
     __description__ = """Base anti-captcha plugin"""
     __license__     = "GPLv3"
@@ -29,39 +29,30 @@ class Captcha(Plugin):
         self.init()
 
 
-    def init(self):
-        """
-        Initialize additional data structures
-        """
-        pass
-
-
     def _log(self, level, plugintype, pluginname, messages):
-        return self.plugin._log(level,
-                                plugintype,
-                                self.plugin.__name__,
-                                (self.__name__,) + messages)
+        messages = (self.__name__,) + messages
+        return self.plugin._log(level, plugintype, self.plugin.__name__, messages)
 
 
     def recognize(self, image):
         """
         Extend to build your custom anti-captcha ocr
         """
+        self.log_debug("This function does nothing")
         pass
 
 
-    def decrypt(self, url, get={}, post={}, ref=False, cookies=False, decode=False,
+    def decrypt(self, url, get={}, post={}, ref=False, cookies=True, decode=False, req=None,
                 input_type='jpg', output_type='textual', ocr=True, timeout=120):
-        img = self.load(url, get=get, post=post, ref=ref, cookies=cookies, decode=decode)
-        return self._decrypt(img, input_type, output_type, ocr, timeout)
+        img = self.load(url, get=get, post=post, ref=ref, cookies=cookies, decode=decode, req=req or self.plugin.req)
+        return self.decrypt_image(img, input_type, output_type, ocr, timeout)
 
 
-    #@TODO: Definitely choose a better name for this method!
-    def _decrypt(self, raw, input_type='jpg', output_type='textual', ocr=False, timeout=120):
+    def decrypt_image(self, data, input_type='jpg', output_type='textual', ocr=False, timeout=120):
         """
         Loads a captcha and decrypts it with ocr, plugin, user input
 
-        :param raw: image raw data
+        :param data: image raw data
         :param get: get part for request
         :param post: post part for request
         :param cookies: True if cookies should be enabled
@@ -77,7 +68,7 @@ class Captcha(Plugin):
         time_ref = ("%.2f" % time.time())[-6:].replace(".", "")
 
         with open(os.path.join("tmp", "captcha_image_%s_%s.%s" % (self.plugin.__name__, time_ref, input_type)), "wb") as tmp_img:
-            tmp_img.write(raw)
+            tmp_img.write(encode(data))
 
         if ocr:
             if isinstance(ocr, basestring):
@@ -90,14 +81,13 @@ class Captcha(Plugin):
             captchaManager = self.pyload.captchaManager
 
             try:
-                self.task = captchaManager.newTask(raw, input_type, tmp_img.name, output_type)
+                self.task = captchaManager.newTask(data, input_type, tmp_img.name, output_type)
 
                 captchaManager.handleCaptcha(self.task)
 
                 self.task.setWaiting(max(timeout, 50))  #@TODO: Move to `CaptchaManager` in 0.4.10
                 while self.task.isWaiting():
-                    if self.plugin.pyfile.abort:
-                        self.plugin.abort()
+                    self.plugin.check_status()
                     time.sleep(1)
 
             finally:
@@ -107,8 +97,7 @@ class Captcha(Plugin):
                 self.fail(self.task.error)
 
             elif not self.task.result:
-                self.invalid()
-                self.plugin.retry(reason=_("No captcha result obtained in appropiate time"))
+                self.plugin.retry_captcha(msg=_("No captcha result obtained in appropriate time"))
 
             result = self.task.result
 
@@ -117,10 +106,9 @@ class Captcha(Plugin):
                 os.remove(tmp_img.name)
 
             except OSError, e:
-                self.log_warning(_("Error removing: %s") % tmp_img.name, e)
-                traceback.print_exc()
+                self.log_warning(_("Error removing `%s`") % tmp_img.name, e)
 
-        self.log_info(_("Captcha result: ") + result)  #@TODO: Remove from here?
+        # self.log_info(_("Captcha result: ") + result)  #@TODO: Remove from here?
 
         return result
 
@@ -129,7 +117,7 @@ class Captcha(Plugin):
         if not self.task:
             return
 
-        self.log_error(_("Invalid captcha"))
+        self.log_warning(_("Invalid captcha"))
         self.task.invalid()
 
 

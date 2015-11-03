@@ -8,11 +8,12 @@ from module.plugins.internal.Hoster import Hoster
 class VeehdCom(Hoster):
     __name__    = "VeehdCom"
     __type__    = "hoster"
-    __version__ = "0.25"
+    __version__ = "0.27"
     __status__  = "testing"
 
     __pattern__ = r'http://veehd\.com/video/\d+_\S+'
-    __config__  = [("filename_spaces", "bool", "Allow spaces in filename", False),
+    __config__  = [("activated", "bool", "Activated", True),
+                   ("filename_spaces", "bool", "Allow spaces in filename", False),
                    ("replacement_char", "str", "Filename replacement character", "_")]
 
     __description__ = """Veehd.com hoster plugin"""
@@ -37,23 +38,23 @@ class VeehdCom(Hoster):
     def download_html(self):
         url = self.pyfile.url
         self.log_debug("Requesting page: %s" % url)
-        self.html = self.load(url)
+        self.data = self.load(url)
 
 
     def file_exists(self):
-        if not self.html:
+        if not self.data:
             self.download_html()
 
-        if '<title>Veehd</title>' in self.html:
+        if '<title>Veehd</title>' in self.data:
             return False
         return True
 
 
     def get_file_name(self):
-        if not self.html:
+        if not self.data:
             self.download_html()
 
-        m = re.search(r'<title.*?>([^<]+) on Veehd</title>', self.html)
+        m = re.search(r'<title.*?>([^<]+) on Veehd</title>', self.data)
         if m is None:
             self.error(_("Video title not found"))
 
@@ -72,11 +73,11 @@ class VeehdCom(Hoster):
         """
         Returns the absolute downloadable filepath
         """
-        if not self.html:
+        if not self.data:
             self.download_html()
 
         m = re.search(r'<embed type="video/divx" src="(http://([^/]*\.)?veehd\.com/dl/.+?)"',
-                          self.html)
+                          self.data)
         if m is None:
             self.error(_("Embedded video url not found"))
 

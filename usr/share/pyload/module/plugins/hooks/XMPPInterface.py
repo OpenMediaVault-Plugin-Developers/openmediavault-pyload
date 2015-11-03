@@ -12,10 +12,11 @@ from module.plugins.hooks.IRCInterface import IRCInterface
 class XMPPInterface(IRCInterface, JabberClient):
     __name__    = "XMPPInterface"
     __type__    = "hook"
-    __version__ = "0.12"
+    __version__ = "0.14"
     __status__  = "testing"
 
-    __config__ = [("jid"      , "str" , "Jabber ID"                           , "user@exmaple-jabber-server.org"         ),
+    __config__ = [("activated", "bool", "Activated"                           , False                                    ),
+                  ("jid"      , "str" , "Jabber ID"                           , "user@exmaple-jabber-server.org"         ),
                   ("pw"       , "str" , "Password"                            , ""                                       ),
                   ("tls"      , "bool", "Use TLS"                             , False                                    ),
                   ("owners"   , "str" , "List of JIDs accepting commands from", "me@icq-gateway.org;some@msn-gateway.org"),
@@ -31,8 +32,8 @@ class XMPPInterface(IRCInterface, JabberClient):
     implements(IMessageHandlersProvider)
 
 
-    def __init__(self, core, manager):
-        IRCInterface.__init__(self, core, manager)
+    def __init__(self, *args, **kwargs):
+        IRCInterface.__init__(self, *args, **kwargs)
 
         self.jid = JID(self.get_config('jid'))
         password = self.get_config('pw')
@@ -70,6 +71,7 @@ class XMPPInterface(IRCInterface, JabberClient):
         try:
             if self.get_config('info_pack'):
                 self.announce(_("Package finished: %s") % pypack.name)
+
         except Exception:
             pass
 
@@ -79,6 +81,7 @@ class XMPPInterface(IRCInterface, JabberClient):
             if self.get_config('info_file'):
                 self.announce(
                     _("Download finished: %(name)s @ %(plugin)s") % {'name': pyfile.name, 'plugin': pyfile.pluginname})
+
         except Exception:
             pass
 
@@ -88,6 +91,7 @@ class XMPPInterface(IRCInterface, JabberClient):
         self.connect()
         try:
             self.loop()
+
         except Exception, ex:
             self.log_error(ex)
 
@@ -159,6 +163,7 @@ class XMPPInterface(IRCInterface, JabberClient):
                 trigger = temp[0]
                 if len(temp) > 1:
                     args = temp[1:]
+
             except Exception:
                 pass
 
@@ -174,8 +179,9 @@ class XMPPInterface(IRCInterface, JabberClient):
                         body=line)
 
                     messages.append(m)
+
             except Exception, e:
-                self.log_error(e)
+                self.log_error(e, trace=True)
 
             return messages
 
@@ -213,7 +219,7 @@ class XMPPInterface(IRCInterface, JabberClient):
         self.disconnect()
 
 
-    def after_reconnect(self, ip):
+    def after_reconnect(self, ip, oldip):
         self.connect()
 
 
