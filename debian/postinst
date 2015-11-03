@@ -91,7 +91,7 @@ webinterface - "Webinterface":
         str template : "Template" = default
         bool activated : "Activated" = True
         str prefix : "Path Prefix" =
-        builtin;threaded;fastcgi;lightweight server : "Server" = builtin
+        builtin;threaded;fastcgi;lightweight server : "Server" = threaded
         ip host : "IP" = 0.0.0.0
         bool https : "Use HTTPS" = False
         int port : "Port" = 8888

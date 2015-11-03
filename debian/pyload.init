@@ -23,7 +23,8 @@ PID_FILE=/var/run/pyload/pyload.pid
 PID_PATH=$(dirname $PID_FILE)
 NAME=pyload
 DESC=pyload
-DAEMON_OPTS="${APP_PATH}/pyLoadCore.py --daemon --pidfile=${PID_FILE}"
+configdir="/home/pyload/.pyload"
+DAEMON_OPTS="${APP_PATH}/pyLoadCore.py --daemon --pidfile=${PID_FILE} --configdir=${configdir}"
 ############### END EDIT ME ##################
 
 # Get lsb functions
