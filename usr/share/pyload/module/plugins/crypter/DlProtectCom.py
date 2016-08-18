@@ -1,26 +1,23 @@
 # -*- coding: utf-8 -*-
 
+import base64
 import re
 import time
 
-import base64
-from base64 import urlsafe_b64encode
-
-from module.plugins.internal.SimpleCrypter import SimpleCrypter, create_getInfo
+from module.plugins.internal.SimpleCrypter import SimpleCrypter
 
 
 class DlProtectCom(SimpleCrypter):
     __name__    = "DlProtectCom"
     __type__    = "crypter"
-    __version__ = "0.08"
+    __version__ = "0.10"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?dl-protect\.com/((en|fr)/)?\w+'
-    __config__  = [("activated"            , "bool", "Activated"                                        , True),
-                   ("use_premium"          , "bool", "Use premium account if available"                 , True),
-                   ("use_subfolder"        , "bool", "Save package to subfolder"                        , True),
-                   ("subfolder_per_package", "bool", "Create a subfolder for each package"              , True),
-                   ("max_wait"             , "int" , "Reconnect if waiting time is greater than minutes", 10  )]
+    __config__  = [("activated"         , "bool"          , "Activated"                                        , True     ),
+                   ("use_premium"       , "bool"          , "Use premium account if available"                 , True     ),
+                   ("folder_per_package", "Default;Yes;No", "Create folder for each package"                   , "Default"),
+                   ("max_wait"          , "int"           , "Reconnect if waiting time is greater than minutes", 10       )]
 
     __description__ = """Dl-protect.com decrypter plugin"""
     __license__     = "GPLv3"
@@ -30,6 +27,7 @@ class DlProtectCom(SimpleCrypter):
     COOKIES = [("dl-protect.com", "l", "en")]
 
     OFFLINE_PATTERN = r'Unfortunately, the link you are looking for is not found'
+
 
     # Information decoding
     # For test purposes
@@ -72,7 +70,7 @@ class DlProtectCom(SimpleCrypter):
 
     # Sample configuration
     def conf(self):
-        useragent = self.get_config('useragent', plugin="UserAgentSwitcher")
+        useragent = self.pyload.api.getConfigValue("UserAgentSwitcher", "useragent", "plugin")
         conf = {'res': '1280x611x24',
                 'java': True,
                 'user_agent': useragent,
@@ -84,7 +82,7 @@ class DlProtectCom(SimpleCrypter):
 
     def get_links(self):
         #: Direct link with redirect
-        if not re.match(r"https?://(?:www\.)?dl-protect\.com/.+", self.req.http.lastEffectiveURL):
+        if not re.match(r'https?://(?:www\.)?dl-protect\.com/.+', self.req.http.lastEffectiveURL):
             return [self.req.http.lastEffectiveURL]
 
         post_req = {'key'       : re.search(r'name="key" value="(.+?)"', self.data).group(1),
@@ -98,7 +96,7 @@ class DlProtectCom(SimpleCrypter):
 
         else:
             mstime  = int(round(time.time() * 1000))
-            b64time = "_" + urlsafe_b64encode(str(mstime)).replace("=", "%3D")
+            b64time = "_" + base64.urlsafe_b64encode(str(mstime)).replace("=", "%3D")
 
             post_req.update({'i'         : b64time,
                              'submitform': "Decrypt+link"})
@@ -124,6 +122,3 @@ class DlProtectCom(SimpleCrypter):
 
         # Filters interesting urls from ads
         return re.findall(r'<a href="(?P<id>[^/].+?)" target="_blank">(?P=id)</a>', self.data)
-
-
-getInfo = create_getInfo(DlProtectCom)

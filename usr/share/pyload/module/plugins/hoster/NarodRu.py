@@ -4,13 +4,13 @@ import random
 import re
 import urlparse
 
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+from module.plugins.internal.SimpleHoster import SimpleHoster
 
 
 class NarodRu(SimpleHoster):
     __name__    = "NarodRu"
     __type__    = "hoster"
-    __version__ = "0.15"
+    __version__ = "0.16"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?narod(\.yandex)?\.ru/(disk|start/\d+\.\w+\-narod\.yandex\.ru)/(?P<ID>\d+)/.+'
@@ -25,13 +25,13 @@ class NarodRu(SimpleHoster):
     __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
 
 
-    NAME_PATTERN = r'<dt class="name">(?:<[^<]*>)*(?P<N>[^<]+)</dt>'
-    SIZE_PATTERN = r'<dd class="size">(?P<S>\d[^<]*)</dd>'
+    NAME_PATTERN = r'<dt class="name">(?:<.*?>)*(?P<N>.+?)</dt>'
+    SIZE_PATTERN = r'<dd class="size">(?P<S>\d.*?)</dd>'
     OFFLINE_PATTERN = r'<title>404</title>|Файл удален с сервиса|Закончился срок хранения файла\.'
 
     SIZE_REPLACEMENTS = [(u'КБ', 'KB'), (u'МБ', 'MB'), (u'ГБ', 'GB')]
     URL_REPLACEMENTS = [("narod.yandex.ru/", "narod.ru/"),
-                             (r"/start/\d+\.\w+\-narod\.yandex\.ru/(\d{6,15})/\w+/(\w+)", r"/disk/\1/\2")]
+                        (r'/start/\d+\.\w+\-narod\.yandex\.ru/(\d{6,15})/\w+/(\w+)', r'/disk/\1/\2')]
 
     CAPTCHA_PATTERN = r'<number url="(.*?)">(\w+)</number>'
     LINK_FREE_PATTERN = r'<a class="h-link" rel="yandex_bar" href="(.+?)">'
@@ -57,6 +57,3 @@ class NarodRu(SimpleHoster):
 
         elif u'<b class="error-msg"><strong>Ошиблись?</strong>' in self.data:
             self.retry_captcha()
-
-
-getInfo = create_getInfo(NarodRu)

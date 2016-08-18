@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
 
+import os
 import re
 import time
 
 from module.network.RequestFactory import getURL as get_url
 from module.plugins.captcha.ReCaptcha import ReCaptcha
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+from module.plugins.internal.SimpleHoster import SimpleHoster
 
 
 class UploadedTo(SimpleHoster):
     __name__    = "UploadedTo"
     __type__    = "hoster"
-    __version__ = "0.99"
+    __version__ = "1.04"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?(uploaded\.(to|net)|ul\.to)(/file/|/?\?id=|.*?&id=|/)(?P<ID>\w+)'
@@ -75,8 +76,8 @@ class UploadedTo(SimpleHoster):
 
         self.data = self.load("http://uploaded.net/js/download.js")
 
-        recaptcha = ReCaptcha(self)
-        response, challenge = recaptcha.challenge()
+        self.captcha = ReCaptcha(pyfile)
+        response, challenge = self.captcha.challenge()
 
         self.data = self.load("http://uploaded.net/io/ticket/captcha/%s" % self.info['pattern']['ID'],
                               post={'recaptcha_challenge_field': challenge,
@@ -86,5 +87,12 @@ class UploadedTo(SimpleHoster):
         super(UploadedTo, self).handle_free(pyfile)
         self.check_errors()
 
+    def check_download(self):
+        check = self.scan_download({'dl_limit': self.DL_LIMIT_PATTERN})
 
-getInfo = create_getInfo(UploadedTo)
+        if check == "dl_limit":
+            self.log_warning(_("Free download limit reached"))
+            os.remove(self.last_download)
+            self.retry(wait=10800, msg=_("Free download limit reached"))
+
+        return super(UploadedTo, self).check_download()

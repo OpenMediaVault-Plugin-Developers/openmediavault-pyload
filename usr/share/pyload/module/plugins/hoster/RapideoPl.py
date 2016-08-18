@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from module.plugins.internal.MultiHoster import MultiHoster, create_getInfo
-from module.plugins.internal.utils import json
+from module.plugins.internal.MultiHoster import MultiHoster
+from module.plugins.internal.misc import json
 
 
 class RapideoPl(MultiHoster):
     __name__    = "RapideoPl"
     __type__    = "hoster"
-    __version__ = "0.08"
+    __version__ = "0.09"
     __status__  = "testing"
 
     __pattern__ = r'^unmatchable$'
@@ -40,8 +40,8 @@ class RapideoPl(MultiHoster):
                    80: "Too many incorrect login attempts, account blocked for 24h"}
 
 
-    def prepare(self):
-        super(RapideoPl, self).prepare()
+    def _prepare(self):
+        super(RapideoPl, self)._prepare()
 
         data = self.account.get_data()
 
@@ -103,6 +103,3 @@ class RapideoPl(MultiHoster):
 
         except Exception:
             self.temp_offline("Query error #2")
-
-
-getInfo = create_getInfo(RapideoPl)

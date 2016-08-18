@@ -3,13 +3,13 @@
 import re
 import urlparse
 
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+from module.plugins.internal.SimpleHoster import SimpleHoster
 
 
 class UloziskoSk(SimpleHoster):
     __name__    = "UloziskoSk"
     __type__    = "hoster"
-    __version__ = "0.28"
+    __version__ = "0.29"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?ulozisko\.sk/.+'
@@ -24,7 +24,7 @@ class UloziskoSk(SimpleHoster):
     __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
 
 
-    NAME_PATTERN = r'<div class="down1">(?P<N>[^<]+)</div>'
+    NAME_PATTERN = r'<div class="down1">(?P<N>.+?)</div>'
     SIZE_PATTERN = ur'Veľkosť súboru: <strong>(?P<S>[\d.,]+) (?P<U>[\w^_]+)</strong><br />'
     OFFLINE_PATTERN = ur'<span class = "red">Zadaný súbor neexistuje z jedného z nasledujúcich dôvodov:</span>'
 
@@ -72,6 +72,3 @@ class UloziskoSk(SimpleHoster):
                             'id'      : id,
                             'name'    : pyfile.name,
                             'but'     : "++++STIAHNI+S%DABOR++++"})
-
-
-getInfo = create_getInfo(UloziskoSk)

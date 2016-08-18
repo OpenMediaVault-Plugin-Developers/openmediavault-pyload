@@ -3,13 +3,13 @@
 import re
 
 from module.plugins.internal.Account import Account
-from module.plugins.internal.utils import set_cookie
+from module.plugins.internal.misc import set_cookie
 
 
 class ShareonlineBiz(Account):
     __name__    = "ShareonlineBiz"
     __type__    = "account"
-    __version__ = "0.42"
+    __version__ = "0.45"
     __status__  = "testing"
 
     __description__ = """Share-online.biz account plugin"""
@@ -25,15 +25,10 @@ class ShareonlineBiz(Account):
                              'password': password},
                         decode=False)
 
-        self.log_debug(res)
-
         api = dict(line.split("=") for line in res.splitlines() if "=" in line)
 
         if not 'a' in api:
             self.fail_login(res.strip('*'))
-
-        if api['a'].lower() == "not_available":
-            self.fail_login(_("No info available"))
 
         return api
 
@@ -44,11 +39,11 @@ class ShareonlineBiz(Account):
         trafficleft = -1
         maxtraffic  = 100 * 1024 * 1024 * 1024  #: 100 GB
 
-        api = self.api_response(user, password)
+        api_info = self.api_response(user, password)
 
-        premium    = api['group'] in ("PrePaid", "Premium", "Penalty-Premium")
-        validuntil = float(api['expire_date'])
-        traffic    = float(api['traffic_1d'].split(";")[0])
+        premium    = api_info['group'] in ("PrePaid", "Premium", "Penalty-Premium", "VIP", "VIP-Special")
+        validuntil = float(api_info['expire_date'])
+        traffic    = float(api_info['traffic_1d'].split(";")[0])
 
         if maxtraffic > traffic:
             trafficleft = maxtraffic - traffic
@@ -65,5 +60,5 @@ class ShareonlineBiz(Account):
 
 
     def signin(self, user, password, data):
-        api = self.api_response(user, password)
-        set_cookie(self.req.cj, "share-online.biz", 'a', api['a'])
+        api_info = self.api_response(user, password)
+        set_cookie(self.req.cj, "share-online.biz", 'a', api_info['a'])

@@ -4,14 +4,14 @@ import re
 import time
 import urllib
 
-from module.plugins.internal.MultiHoster import MultiHoster, create_getInfo
-from module.plugins.internal.utils import json, parse_size
+from module.plugins.internal.MultiHoster import MultiHoster
+from module.plugins.internal.misc import json, parse_size
 
 
 class RealdebridCom(MultiHoster):
     __name__    = "RealdebridCom"
     __type__    = "hoster"
-    __version__ = "0.71"
+    __version__ = "0.73"
     __status__  = "testing"
 
     __pattern__ = r'https?://((?:www\.|s\d+\.)?real-debrid\.com/dl/|[\w^_]\.rdb\.so/d/)[\w^_]+'
@@ -32,11 +32,12 @@ class RealdebridCom(MultiHoster):
 
 
     def handle_premium(self, pyfile):
-        data = json.loads(self.load("https://real-debrid.com/ajax/unrestrict.php",
-                                    get={'lang'    : "en",
-                                         'link'    : pyfile.url,
-                                         'password': self.get_password(),
-                                         'time'    : int(time.time() * 1000)}))
+        html = self.load("https://real-debrid.com/ajax/unrestrict.php",
+                         get={'lang'    : "en",
+                              'link'    : pyfile.url,
+                              'password': self.get_password(),
+                              'time'    : int(time.time() * 1000)})
+        data = json.loads(html)
 
         self.log_debug("Returned Data: %s" % data)
 
@@ -51,6 +52,3 @@ class RealdebridCom(MultiHoster):
                 pyfile.name = data['file_name']
             pyfile.size = parse_size(data['file_size'])
             self.link = data['generated_links'][0][-1]
-
-
-getInfo = create_getInfo(RealdebridCom)

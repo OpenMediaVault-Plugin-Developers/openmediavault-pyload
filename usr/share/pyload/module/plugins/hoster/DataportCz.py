@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+from module.plugins.internal.SimpleHoster import SimpleHoster
 
 
 class DataportCz(SimpleHoster):
     __name__    = "DataportCz"
     __type__    = "hoster"
-    __version__ = "0.45"
+    __version__ = "0.46"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?dataport\.cz/file/(.+)'
@@ -21,7 +21,7 @@ class DataportCz(SimpleHoster):
     __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
 
 
-    NAME_PATTERN = r'<span itemprop="name">(?P<N>[^<]+)</span>'
+    NAME_PATTERN = r'<span itemprop="name">(?P<N>.+?)</span>'
     SIZE_PATTERN = r'<td class="fil">Velikost</td>\s*<td>(?P<S>[^<]+)</td>'
     OFFLINE_PATTERN = r'<h2>Soubor nebyl nalezen</h2>'
 
@@ -44,7 +44,7 @@ class DataportCz(SimpleHoster):
 
         self.download("http://www.dataport.cz%s" % action, post=inputs)
 
-        check = self.check_file({'captcha': 'alert("\u0160patn\u011b opsan\u00fd k\u00f3d z obr\u00e1zu");',
+        check = self.scan_download({'captcha': 'alert("\u0160patn\u011b opsan\u00fd k\u00f3d z obr\u00e1zu");',
                                  'slot'   : 'alert("Je n\u00e1m l\u00edto, ale moment\u00e1ln\u011b nejsou'})
         if check == "captcha":
             self.retry_captcha()
@@ -52,6 +52,3 @@ class DataportCz(SimpleHoster):
         elif check == "slot":
             self.log_debug("No free slots - wait 60s and retry")
             self.retry(wait=60)
-
-
-getInfo = create_getInfo(DataportCz)

@@ -2,13 +2,13 @@
 
 import re
 
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+from module.plugins.internal.SimpleHoster import SimpleHoster
 
 
 class UserscloudCom(SimpleHoster):
     __name__    = "UserscloudCom"
     __type__    = "hoster"
-    __version__ = "0.03"
+    __version__ = "0.05"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?userscloud\.com/\w{12}'
@@ -23,8 +23,8 @@ class UserscloudCom(SimpleHoster):
     __authors__     = [("GammaC0de", None)]
 
 
-    NAME_PATTERN    = r'<h2 class="strong margin-none">(?P<N>.+?)<'
-    SIZE_PATTERN    = r'<div class="ribbon">(?P<S>[\d.,]+) (?P<U>[\w^_]+)<'
+    NAME_PATTERN    = r'<h2><b>(?P<N>.+?)</b></h2>'
+    SIZE_PATTERN    = r'<b>Download</b> <small><font color="#FFFFFF">\((?P<S>[\d.,]+) (?P<U>[\w^_]+)\)'
     OFFLINE_PATTERN = r'The file you are trying to download is no longer available'
 
 
@@ -37,6 +37,3 @@ class UserscloudCom(SimpleHoster):
     def handle_free(self, pyfile):
         self.download(pyfile.url,
                       post=dict(re.findall(r'<input type="hidden" name="(.+?)" value="(.*?)">', self.data)))
-
-
-getInfo = create_getInfo(UserscloudCom)

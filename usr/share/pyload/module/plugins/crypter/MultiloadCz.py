@@ -2,13 +2,13 @@
 
 import re
 
-from module.plugins.internal.Crypter import Crypter, create_getInfo
+from module.plugins.internal.Crypter import Crypter
 
 
 class MultiloadCz(Crypter):
     __name__    = "MultiloadCz"
     __type__    = "crypter"
-    __version__ = "0.44"
+    __version__ = "0.45"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:[^/]*\.)?multiload\.cz/(stahnout|slozka)/.+'
@@ -25,7 +25,7 @@ class MultiloadCz(Crypter):
 
 
     FOLDER_PATTERN = r'<form action="" method="get"><textarea.*?>([^>]*)</textarea></form>'
-    LINK_PATTERN = r'<p class="manager-server"><strong>([^<]+)</strong></p><p class="manager-linky"><a href="(.+?)">'
+    LINK_PATTERN = r'<p class="manager-server"><strong>(.+?)</strong></p><p class="manager-linky"><a href="(.+?)">'
 
 
     def decrypt(self, pyfile):
@@ -38,12 +38,9 @@ class MultiloadCz(Crypter):
         else:
             m = re.findall(self.LINK_PATTERN, self.data)
             if m is not None:
-                prefered_set = set(self.get_config('usedHoster').split('|'))
+                prefered_set = set(self.config.get('usedHoster').split('|'))
                 self.links.extend(x[1] for x in m if x[0] in prefered_set)
 
                 if not self.links:
-                    ignored_set = set(self.get_config('ignoredHoster').split('|'))
+                    ignored_set = set(self.config.get('ignoredHoster').split('|'))
                     self.links.extend(x[1] for x in m if x[0] not in ignored_set)
-
-
-getInfo = create_getInfo(MultiloadCz)

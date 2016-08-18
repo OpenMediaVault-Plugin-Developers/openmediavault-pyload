@@ -1,4 +1,10 @@
-openmediavault-pyload (1.0.4) unstable; urgency=low
+openmediavault-pyload (1.0.5) unstable; urgency=low
+
+  * Update to latest pyload version
+
+ -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Thu, 18 Aug 2016 23:33:00 -0000
+
+openmediavault-pyload (1.0.5) unstable; urgency=low
 
   * Update to latest pyload version
 

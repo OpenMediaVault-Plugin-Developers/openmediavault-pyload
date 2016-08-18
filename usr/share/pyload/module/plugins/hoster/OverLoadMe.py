@@ -3,14 +3,14 @@
 import re
 import urllib
 
-from module.plugins.internal.MultiHoster import MultiHoster, create_getInfo
-from module.plugins.internal.utils import json, parse_size
+from module.plugins.internal.MultiHoster import MultiHoster
+from module.plugins.internal.misc import json, parse_size
 
 
 class OverLoadMe(MultiHoster):
     __name__    = "OverLoadMe"
     __type__    = "hoster"
-    __version__ = "0.16"
+    __version__ = "0.18"
     __status__  = "testing"
 
     __pattern__ = r'https?://.*overload\.me/.+'
@@ -48,6 +48,3 @@ class OverLoadMe(MultiHoster):
             if pyfile.name and pyfile.name.endswith('.tmp') and data['filename']:
                 pyfile.name = data['filename']
                 pyfile.size = parse_size(data['filesize'])
-
-
-getInfo = create_getInfo(OverLoadMe)

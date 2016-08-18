@@ -3,7 +3,8 @@
 import re
 
 from module.network.RequestFactory import getURL as get_url
-from module.plugins.internal.SimpleHoster import SimpleHoster, parse_fileInfo
+from module.plugins.internal.Base import parse_fileInfo
+from module.plugins.internal.SimpleHoster import SimpleHoster
 
 
 def get_info(urls):
@@ -12,7 +13,7 @@ def get_info(urls):
         m = re.search(r'Location: (.+)\r\n', h)
 
         if m and not re.match(m.group(1), FilefactoryCom.__pattern__):  #: It's a direct link! Skipping
-            yield (url, 0, 3, url)
+            yield (url, 0, 7, url)
         else:
             #: It's a standard html page
             yield parse_fileInfo(FilefactoryCom, url, get_url(url))
@@ -21,7 +22,7 @@ def get_info(urls):
 class FilefactoryCom(SimpleHoster):
     __name__    = "FilefactoryCom"
     __type__    = "hoster"
-    __version__ = "0.61"
+    __version__ = "0.63"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:www\.)?filefactory\.com/(file|trafficshare/\w+)/\w+'
@@ -66,7 +67,7 @@ class FilefactoryCom(SimpleHoster):
 
 
     def check_download(self):
-        check = self.check_file({
+        check = self.scan_download({
             'multiple': "You are currently downloading too many files at once.",
             'error'   : '<div id="errorMessage">'
         })

@@ -2,14 +2,14 @@
 
 import re
 
-from module.plugins.internal.MultiHoster import MultiHoster, create_getInfo
-from module.plugins.internal.SimpleHoster import seconds_to_midnight
+from module.plugins.internal.MultiHoster import MultiHoster
+from module.plugins.internal.misc import seconds_to_midnight
 
 
 class HighWayMe(MultiHoster):
     __name__    = "HighWayMe"
     __type__    = "hoster"
-    __version__ = "0.17"
+    __version__ = "0.20"
     __status__  = "testing"
 
     __pattern__ = r'https?://.+high-way\.my'
@@ -65,7 +65,7 @@ class HighWayMe(MultiHoster):
         self.check_errors()
 
         try:
-            self.pyfile.name = re.search(r'<name>([^<]+)</name>', self.data).group(1)
+            self.pyfile.name = re.search(r'<name>(.+?)</name>', self.data).group(1)
 
         except AttributeError:
             self.pyfile.name = ""
@@ -76,7 +76,4 @@ class HighWayMe(MultiHoster):
         except AttributeError:
             self.pyfile.size = 0
 
-        self.link = re.search(r'<download>([^<]+)</download>', self.data).group(1)
-
-
-getInfo = create_getInfo(HighWayMe)
+        self.link = re.search(r'<download>(.+?)</download>', self.data).group(1)

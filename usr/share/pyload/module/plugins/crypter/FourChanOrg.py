@@ -5,20 +5,19 @@
 import re
 import urlparse
 
-from module.plugins.internal.Crypter import Crypter, create_getInfo
+from module.plugins.internal.Crypter import Crypter
 
 
 class FourChanOrg(Crypter):
     __name__    = "FourChanOrg"
     __type__    = "crypter"
-    __version__ = "0.36"
+    __version__ = "0.37"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?boards\.4chan\.org/\w+/res/(\d+)'
-    __config__  = [("activated"            , "bool", "Activated"                          , True),
-                   ("use_premium"          , "bool", "Use premium account if available"   , True),
-                   ("use_subfolder"        , "bool", "Save package to subfolder"          , True),
-                   ("subfolder_per_package", "bool", "Create a subfolder for each package", True)]
+    __config__  = [("activated"         , "bool"          , "Activated"                       , True     ),
+                   ("use_premium"       , "bool"          , "Use premium account if available", True     ),
+                   ("folder_per_package", "Default;Yes;No", "Create folder for each package"  , "Default")]
 
     __description__ = """4chan.org folder decrypter plugin"""
     __license__     = "GPLv3"
@@ -29,6 +28,3 @@ class FourChanOrg(Crypter):
         pagehtml = self.load(pyfile.url)
         images = set(re.findall(r'(images\.4chan\.org/[^/]*/src/[^"<]+)', pagehtml))
         self.links = [urlparse.urljoin("http://", image) for image in images]
-
-
-getInfo = create_getInfo(FourChanOrg)

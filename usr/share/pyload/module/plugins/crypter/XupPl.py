@@ -1,19 +1,18 @@
 # -*- coding: utf-8 -*-
 
-from module.plugins.internal.Crypter import Crypter, create_getInfo
+from module.plugins.internal.Crypter import Crypter
 
 
 class XupPl(Crypter):
     __name__    = "XupPl"
     __type__    = "crypter"
-    __version__ = "0.14"
+    __version__ = "0.15"
     __status__  = "testing"
 
     __pattern__ = r'https?://(?:[^/]*\.)?xup\.pl/.+'
-    __config__  = [("activated"            , "bool", "Activated"                          , True),
-                   ("use_premium"          , "bool", "Use premium account if available"   , True),
-                   ("use_subfolder"        , "bool", "Save package to subfolder"          , True),
-                   ("subfolder_per_package", "bool", "Create a subfolder for each package", True)]
+    __config__  = [("activated"         , "bool"          , "Activated"                       , True     ),
+                   ("use_premium"       , "bool"          , "Use premium account if available", True     ),
+                   ("folder_per_package", "Default;Yes;No", "Create folder for each package"  , "Default")]
 
     __description__ = """Xup.pl decrypter plugin"""
     __license__     = "GPLv3"
@@ -26,6 +25,3 @@ class XupPl(Crypter):
             self.links = [header.get('location')]
         else:
             self.fail(_("Unable to find link"))
-
-
-getInfo = create_getInfo(XupPl)

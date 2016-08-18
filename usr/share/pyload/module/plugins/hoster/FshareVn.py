@@ -5,15 +5,8 @@ import time
 import urlparse
 
 from module.network.RequestFactory import getURL as get_url
-from module.plugins.internal.SimpleHoster import SimpleHoster, parse_fileInfo
-
-
-def get_info(urls):
-    for url in urls:
-        html = get_url("http://www.fshare.vn/check_link.php",
-                       post={'action': "check_link", 'arrlinks': url})
-
-        yield parse_fileInfo(FshareVn, url, html)
+from module.plugins.internal.Base import parse_fileInfo
+from module.plugins.internal.SimpleHoster import SimpleHoster
 
 
 def double_decode(m):
@@ -23,7 +16,7 @@ def double_decode(m):
 class FshareVn(SimpleHoster):
     __name__    = "FshareVn"
     __type__    = "hoster"
-    __version__ = "0.24"
+    __version__ = "0.25"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?fshare\.vn/file/.+'
@@ -38,7 +31,7 @@ class FshareVn(SimpleHoster):
     __authors__     = [("zoidberg", "zoidberg@mujmail.cz")]
 
 
-    INFO_PATTERN = r'<p>(?P<N>[^<]+)<\\/p>[\\trn\s]*<p>(?P<S>[\d.,]+)\s*(?P<U>[\w^_]+)<\\/p>'
+    INFO_PATTERN    = r'<p>(?P<N>.+?)<\\/p>[\\trn\s]*<p>(?P<S>[\d.,]+)\s*(?P<U>[\w^_]+)<\\/p>'
     OFFLINE_PATTERN = r'<div class=\\"f_left file_w\\"|<\\/p>\\t\\t\\t\\t\\r\\n\\t\\t<p><\\/p>\\t\\t\\r\\n\\t\\t<p>0 KB<\\/p>'
 
     NAME_REPLACEMENTS = [("(.*)", double_decode)]

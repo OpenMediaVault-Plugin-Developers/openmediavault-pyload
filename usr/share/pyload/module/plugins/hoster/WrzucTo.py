@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 
-import pycurl
 import re
 
-from module.plugins.internal.SimpleHoster import SimpleHoster, create_getInfo
+import pycurl
+
+from module.plugins.internal.SimpleHoster import SimpleHoster
 
 
 class WrzucTo(SimpleHoster):
     __name__    = "WrzucTo"
     __type__    = "hoster"
-    __version__ = "0.06"
+    __version__ = "0.08"
     __status__  = "testing"
 
     __pattern__ = r'http://(?:www\.)?wrzuc\.to/(\w+(\.wt|\.html)|(\w+/?linki/\w+))'
@@ -51,6 +52,3 @@ class WrzucTo(SimpleHoster):
             self.error(_("No download URL"))
 
         self.link = "http://%s.wrzuc.to/pobierz/%s" % (data['server_id'], data['download_link'])
-
-
-getInfo = create_getInfo(WrzucTo)

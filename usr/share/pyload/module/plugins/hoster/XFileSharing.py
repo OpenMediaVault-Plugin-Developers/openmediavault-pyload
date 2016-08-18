@@ -2,13 +2,13 @@
 
 import re
 
-from module.plugins.internal.XFSHoster import XFSHoster, create_getInfo
+from module.plugins.internal.XFSHoster import XFSHoster
 
 
 class XFileSharing(XFSHoster):
     __name__    = "XFileSharing"
     __type__    = "hoster"
-    __version__ = "0.63"
+    __version__ = "0.64"
     __status__  = "testing"
 
     __pattern__ = r'^unmatchable$'
@@ -46,14 +46,14 @@ class XFileSharing(XFSHoster):
 
     #@TODO: Recheck in 0.4.10
     def setup_base(self):
+        super(XFileSharing, self).setup_base()
+
         if self.account:
             self.req     = self.pyload.requestFactory.getRequest(self.PLUGIN_NAME, self.account.user)
-            self.premium = self.account.info['data']['premium']  #@NOTE: Avoid one unnecessary get_info call by `self.account.premium` here
+            self.premium = self.account.info['data']['premium']  #@NOTE: Don't call get_info here to reduce overhead
         else:
             self.req     = self.pyload.requestFactory.getRequest(self.classname)
             self.premium = False
-
-        super(XFileSharing, self).setup_base()
 
 
     #@TODO: Recheck in 0.4.10
@@ -62,6 +62,3 @@ class XFileSharing(XFSHoster):
         self.__class__.__name__ = str(self.PLUGIN_NAME)
         super(XFileSharing, self).load_account()
         self.__class__.__name__ = class_name
-
-
-getInfo = create_getInfo(XFileSharing)

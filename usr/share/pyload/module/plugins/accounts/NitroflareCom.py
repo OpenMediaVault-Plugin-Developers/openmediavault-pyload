@@ -1,67 +1,38 @@
 # -*- coding: utf-8 -*-
 
-import re
 import time
 
 from module.plugins.internal.Account import Account
+from module.plugins.internal.misc import json
 
 
 class NitroflareCom(Account):
-    __name__    = "NitroflareCom"
-    __type__    = "account"
-    __version__ = "0.10"
-    __status__  = "testing"
+    __name__ = "NitroflareCom"
+    __type__ = "account"
+    __version__ = "0.18"
+    __status__ = "testing"
 
     __description__ = """Nitroflare.com account plugin"""
     __license__     = "GPLv3"
-    __authors__     = [("Walter Purcaro", "vuolter@gmail.com"  )]
-
-
-    VALID_UNTIL_PATTERN  = r'>Time Left</label><strong>(.+?)</'
-    TRAFFIC_LEFT_PATTERN = r'>Daily Limit</label><strong>([\d.,]+)'
-    LOGIN_FAIL_PATTERN   = r'<ul class="errors">\s*<li>'
-
-    TOKEN_PATTERN = r'name="token" value="(.+?)"'
+    __authors__     = [("Walter Purcaro", "vuolter@gmail.com"         ),
+                       ("GammaC0de",      "nitzo2001[AT]yahoo[DOT]com")]
 
 
     def grab_info(self, user, password, data):
-        validuntil   = -1
-        trafficleft  = None
-        premium      = False
+        validuntil = -1
+        trafficleft = None
+        premium = False
 
-        html = self.load("https://nitroflare.com/member",
-                         get={'s': "premium"})
+        data = json.loads(self.load("https://nitroflare.com/api/v2/getKeyInfo",
+                                    get={'user'      : user,
+                                         'premiumKey': password}))
 
-        m = re.search(self.VALID_UNTIL_PATTERN, html)
-        if m is not None:
-            expiredate = m.group(1).strip()
-            self.log_debug("Time Left: " + expiredate)
+        if data['type'] == 'success':
+            trafficleft = self.parse_traffic(data['result']['trafficLeft'], "byte")
+            premium    = data['result']['status'] == "active"
 
-            try:
-                validuntil = sum(int(v) * {'day': 24 * 3600, 'hour': 3600, 'minute': 60}[u.lower()] for v, u in
-                                 re.findall(r'(\d+)\s*(day|hour|minute)', expiredate, re.I))
-
-            except Exception, e:
-                self.log_error(e, trace=True)
-
-            else:
-                self.log_debug("Valid until: %s" % validuntil)
-
-                if validuntil:
-                    validuntil += time.time()
-                    premium = True
-                else:
-                    validuntil = -1
-
-        m = re.search(self.TRAFFIC_LEFT_PATTERN, html)
-        if m is not None:
-            try:
-                trafficleft = self.parse_traffic(str(max(0, 50 - float(m.group(1)))),  "GB")
-
-            except Exception, e:
-                self.log_error(e, trace=True)
-        else:
-            self.log_debug("TRAFFIC_LEFT_PATTERN not found")
+            if premium:
+                validuntil = time.mktime(time.strptime(data['result']['expiryDate'], '%Y-%m-%d %H:%M:%S'))
 
         return {'validuntil' : validuntil,
                 'trafficleft': trafficleft,
@@ -69,15 +40,9 @@ class NitroflareCom(Account):
 
 
     def signin(self, user, password, data):
-        html = self.load("https://nitroflare.com/login")
+        data = json.loads(self.load("https://nitroflare.com/api/v2/getKeyInfo",
+                              get={'user'      : user,
+                                   'premiumKey': password}))
 
-        token = re.search(self.TOKEN_PATTERN, html).group(1)
-
-        html = self.load("https://nitroflare.com/login",
-                         post={'login'   : "",
-                               'email'   : user,
-                               'password': password,
-                               'token'   : token})
-
-        if re.search(self.LOGIN_FAIL_PATTERN, html):
+        if data['type'] != 'success' or data['result']['status'] == "banned":
             self.fail_login()
