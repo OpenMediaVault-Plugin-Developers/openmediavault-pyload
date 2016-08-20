@@ -1,7 +1,7 @@
 {
 	"type": "config",
 	"id": "conf.service.pyload",
-	"title": "Pyload",
+	"title": "Sonarr",
 	"queryinfo": {
 		"xpath": "/config/services/pyload",
 		"iterable": false

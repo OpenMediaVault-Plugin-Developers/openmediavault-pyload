@@ -24,11 +24,9 @@ PYLOAD_CORE="/usr/bin/pyLoadCore"
 PYLOAD_CLI_USR="/usr/share/pyload/pyLoadCli.py"
 PYLOAD_CORE_USR="/usr/share/pyload/pyLoadCore.py"
 
-PYLOAD_INIT="/etc/init.d/pyload"
-
 case "$1" in
 configure)
-    if ! grep -q "^${RUN_AS}:" /etc/passwd; then
+    if ! grep -q "${RUN_AS}:" /etc/passwd; then
         echo "Adding ${RUN_AS} user..."
         useradd --create-home --groups ${RUN_GROUP} --no-user-group --shell /usr/sbin/nologin ${RUN_AS}
     else
@@ -133,7 +131,6 @@ EOF
     fi
 
     rm -Rf "${PYLOAD_USR_DB}"
-    chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_INIT}"
     chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_CLI}"
     chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_CORE}"
     chown ${RUN_AS}:${RUN_GROUP} "${PYLOAD_HOME_DIR}" -R
@@ -142,7 +139,6 @@ EOF
     chmod 775 "${PYLOAD_CORE}"
     chmod 755 "${PYLOAD_CORE_USR}"
     chmod 755 "${PYLOAD_CLI_USR}"
-    insserv -d ${SERVICE_NAME}
 
     if ! omv_config_exists "/config/services/${SERVICE_NAME}"; then
         echo "Initial configuration."
@@ -150,17 +146,15 @@ EOF
         omv_config_add_element "/config/services" "${SERVICE_NAME}" "${object}" true
     fi
 
-    update-rc.d ${SERVICE_NAME} disable
-
     echo "Default username is:  admin"
     echo "Default password is:  openmediavault"
 
-	omv_install_fixperms
-	
-	# Activate package triggers. These triggers are only set during the
-	# package installation.
-	dpkg-trigger update-fixperms
-	dpkg-trigger update-locale
+    omv_install_fixperms
+
+    # Activate package triggers. These triggers are only set during the
+    # package installation.
+    dpkg-trigger update-fixperms
+    dpkg-trigger update-locale
 
     ;;
 abort-upgrade|abort-remove|abort-deconfigure)

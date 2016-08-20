@@ -40,7 +40,7 @@ class Pyload extends ServiceAbstract
 
     private $eventMessagePath = 'org.openmediavault.conf.services.pyload';
 
-	private $pyloadSettingsFile = "/home/pyload/.pyload/pyload.conf";
+    private $pyloadSettingsFile = "/home/pyload/.pyload/pyload.conf";
 
     public function __construct(Database $database = null, Dispatcher $dispatcher = null)
     {
@@ -66,7 +66,7 @@ class Pyload extends ServiceAbstract
         $object = $this->database->get($this->dataModelPath);
 
         if (file_exists($this->pyloadSettingsFile)) {
-            $cmd = sprintf("grep -m2 Port %s | tail -n1 | cut -d ' ' -f 6", $this->pyloadSettingsFile);
+            $cmd = sprintf("grep -m2 Port %s | tail -n1 | cut -d '=' -f 2 | cut -d ' ' -f 2", $this->pyloadSettingsFile);
             if (0 !== $this->exec($cmd, $output)) {
                 throw new OMVException(
                     OMVErrorMsg::E_EXEC_FAILED,
@@ -80,7 +80,7 @@ class Pyload extends ServiceAbstract
 
         // Modify result data
         $object->add('port', 'integer');
-        $object->set('port', intval($port));
+        $object->set('port', intval($output[0]));
 
         return $object->getAssoc();
     }
@@ -88,15 +88,14 @@ class Pyload extends ServiceAbstract
     public function setSettings($params, $context)
     {
         $this->validateMethodContext($context, ['role' => OMV_ROLE_ADMINISTRATOR]);
+        $this->validateMethodParams($params, 'rpc.pyload.setsettings');
 
-        // Get existing configuration object
-        $oldObject = $this->database->get($this->dataModelPath);
+        $object = $this->database->get($this->dataModelPath);
+        $object->setAssoc($params);
 
-        $oldObject->setAssoc($params);
+        $this->database->set($object);
+        $this->dispatcher->notify(OMV_NOTIFY_MODIFY, $this->eventMessagePath, $object);
 
-        $this->database->set($oldObject);
-        $this->dispatcher->notify(OMV_NOTIFY_MODIFY, $this->eventMessagePath, $oldObject);
-
-        return $oldObject->getAssoc();
+        return $object->getAssoc();
     }
 }

@@ -1,23 +1,21 @@
 [{
-    "type": "rpc",
-    "id": "rpc.pyload.setsettings",
+	"type": "rpc",
+	"id": "rpc.pyload.setsettings",
 	"params": {
 		"type": "object",
 		"properties": {
 			"enable": {
-			    "type": "boolean",
+				"type": "boolean",
 				"required": true
 			},
 			"showtab": {
-			    "type": "boolean",
+				"type": "boolean",
 				"required": true
 			},
 			"port": {
-		        "type": "integer",
-		        "minimum": 1025,
-		        "maximum": 65535,
-		        "required": true
-		    }
+				"type": "integer",
+				"required": false
+			}
 		}
 	}
 }]
