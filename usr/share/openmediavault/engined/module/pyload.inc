@@ -1,7 +1,8 @@
 <?php
 
 /**
- * Copyright (C) 2013-2014 OpenMediaVault Plugin Developers
+ * Copyright (C) 2010-2012 Ian Moore <imooreyahoo@gmail.com>
+ * Copyright (C) 2013-2015 OpenMediaVault Plugin Developers.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,96 +18,80 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-require_once "openmediavault/config.inc";
-require_once "openmediavault/error.inc";
-require_once "openmediavault/initscript.inc";
-require_once "openmediavault/module.inc";
-require_once "openmediavault/util.inc";
+namespace OMV\Engined\Module;
 
-class OMVModulePyload extends OMVModuleServiceAbstract implements
-    OMVINotifyListener,
-    OMVIModuleServiceStatus
+use OMV\Config\Database;
+use OMV\Engine\Module\IServiceStatus;
+use OMV\Engine\Module\Manager as ModuleManager;
+use OMV\Engine\Module\ServiceAbstract;
+use OMV\Engine\Notify\Dispatcher;
+use OMV\Engine\Notify\IListener;
+use OMV\System\Process;
+use OMV\System\SystemCtl;
+
+class Pyload extends ServiceAbstract implements
+    IListener,
+    IServiceStatus
 {
-    private function getPluginName()
-    {
-        return strtolower($this->getName());
-    }
 
-    private function getEventMessagePath()
-    {
-        return sprintf("org.openmediavault.service.%s", $this->getPluginName());
-    }
+    private $database;
 
-    private function getXPath()
+    private $dataModelPath = 'conf.service.pyload';
+
+    private $eventMessagePath = 'org.openmediavault.conf.services.pyload';
+
+    private $moduleManager;
+
+    private $serviceName = 'pyload.service';
+
+    public function __construct(Database $database = null)
     {
-        return sprintf("//services/%s", $this->getPluginName());
+        $this->database = $database ?: Database::getInstance();
     }
 
     public function getName()
     {
-        return "PyLoad";
+        return 'pyload';
     }
 
     public function getStatus()
     {
-        global $xmlConfig;
+        $object = $this->database->get($this->dataModelPath);
+        $systemCtl = new SystemCtl($this->serviceName);
 
-        $object = $xmlConfig->get($this->getXPath());
-
-        if (is_null($object)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->getXPath()
-            );
-        }
-
-        $initd = new OMVSysVInitScript($this->getPluginName());
-
-        return array(
-            "name"    => $this->getPluginName(),
-            "title"   => gettext($this->getName()),
-            "enabled" => boolval($object["enable"]),
-            "running" => $initd->status() == 0
-        );
+        return [
+            'name' => $this->getName(),
+            'title' => gettext('PyLoad'),
+            'enabled' => $object->get('enable'),
+            'running' => $systemCtl->isActive(),
+        ];
     }
 
     public function startService()
     {
-        global $xmlConfig;
+        $object = $this->database->get($this->dataModelPath);
 
-        $object = $xmlConfig->get($this->getXPath());
+        if ($object->get('enable')) {
 
-        if (is_null($object)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->getXPath()
-            );
+            $systemCtl = new SystemCtl($this->serviceName);
+            $systemCtl->enable(true);
         }
-
-        if (!boolval($object["enable"])) {
-            return;
-        }
-
-        $initd = new OMVSysVInitScript($this->getPluginName(), true);
-        $initd->exec();
     }
 
     public function stopService()
     {
-        $initd = new OMVSysVInitScript($this->getPluginName());
-        $initd->exec();
+        $systemCtl = new SystemCtl($this->serviceName);
+        $systemCtl->disable(true);
     }
 
-    public function bindListeners(OMVNotifyDispatcher $dispatcher)
+    public function bindListeners(Dispatcher $dispatcher)
     {
+        $moduleManager = ModuleManager::getInstance();
+
         $dispatcher->addListener(
             OMV_NOTIFY_MODIFY,
-            $this->getEventMessagePath(),
-            array($this, "setDirty")
+            $this->eventMessagePath,
+            [$this, 'setDirty']
         );
     }
 }
-
-// Register module
-$moduleMgr = &OMVModuleMgr::getInstance();
-$moduleMgr->registerModule(new OMVModulePyload());

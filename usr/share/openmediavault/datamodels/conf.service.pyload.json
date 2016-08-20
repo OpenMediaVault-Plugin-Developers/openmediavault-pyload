@@ -1,0 +1,25 @@
+{
+	"type": "config",
+	"id": "conf.service.pyload",
+	"title": "Pyload",
+	"queryinfo": {
+		"xpath": "/config/services/pyload",
+		"iterable": false
+	},
+	"properties": {
+		"enable": {
+			"type": "boolean",
+			"default": false
+		},
+		"showtab": {
+			"type": "boolean",
+			"default": false
+		},
+		"port": {
+			"type": "integer",
+			"minimum": 1025,
+			"maximum": 65535,
+			"default": 8888
+		}
+	}
+}

@@ -1,5 +1,8 @@
 #!/usr/bin/make -f
 
+# Verbose mode
+#export DH_VERBOSE=1
+
 include ./openmediavault.mk
 
 PLUGIN_NAME=pyload
@@ -21,7 +24,7 @@ binary-indep: install omv_clean_scm
 	dh_testroot
 	dh_installchangelogs
 	dh_installdebconf
-	dh_installinit --name=pyload
+	dh_systemd_enable --name=pyload
 	dh_lintian
 	dh_link
 	dh_compress

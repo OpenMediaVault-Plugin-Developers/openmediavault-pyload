@@ -1,7 +1,8 @@
 <?php
 
 /**
- * Copyright (C) 2013-2014 OpenMediaVault Plugin Developers
+ * Copyright (C) 2010-2012 Ian Moore <imooreyahoo@gmail.com>
+ * Copyright (C) 2013-2015 OpenMediaVault Plugin Developers.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,36 +17,39 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+ //
 
-require_once "openmediavault/config.inc";
-require_once "openmediavault/error.inc";
-require_once "openmediavault/notify.inc";
-require_once "openmediavault/object.inc";
-require_once "openmediavault/product.inc";
-require_once "openmediavault/rpcservice.inc";
-require_once "openmediavault/system.inc";
-require_once "openmediavault/util.inc";
+namespace OMV\Engined\Rpc;
 
-class OMVRpcServicePyload extends OMVRpcServiceAbstract
+use DateTime;
+use Exception;
+use OMV\Config\Database;
+use OMV\Engine\Notify\Dispatcher;
+use OMV\Rpc\ServiceAbstract;
+use OMV\Rpc\ServiceManager as RpcServiceManager;
+use OMV\System\Process;
+use SplFileObject;
+
+class Pyload extends ServiceAbstract
 {
-    private $pyloadSettingsFile = "/home/pyload/.pyload/pyload.conf";
+    private $database;
 
-    private function getPluginName()
+    private $dataModelPath = 'conf.service.pyload';
+
+    private $dispatcher;
+
+    private $eventMessagePath = 'org.openmediavault.conf.services.pyload';
+
+	private $pyloadSettingsFile = "/home/pyload/.pyload/pyload.conf";
+
+    public function __construct(Database $database = null, Dispatcher $dispatcher = null)
     {
-        return strtolower($this->getName());
+        $this->database = $database ?: Database::getInstance();
+        $this->dispatcher = $dispatcher ?: Dispatcher::getInstance();
     }
 
-    private function getEventMessagePath()
+    public function getName()
     {
-        return sprintf("org.openmediavault.service.%s", $this->getPluginName());
-    }
-
-    private function getXPath()
-    {
-        return sprintf("//services/%s", $this->getPluginName());
-    }
-
-    public function getName() {
         return 'Pyload';
     }
 
@@ -57,20 +61,9 @@ class OMVRpcServicePyload extends OMVRpcServiceAbstract
 
     public function getSettings($params, $context)
     {
-        global $xmlConfig;
+        $this->validateMethodContext($context, ['role' => OMV_ROLE_ADMINISTRATOR]);
 
-        $this->validateMethodContext($context, array(
-            "role" => OMV_ROLE_ADMINISTRATOR
-        ));
-
-        $object = $xmlConfig->get($this->getXPath());
-
-        if (is_null($object)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->getXPath()
-            );
-        }
+        $object = $this->database->get($this->dataModelPath);
 
         if (file_exists($this->pyloadSettingsFile)) {
             $cmd = sprintf("grep -m2 Port %s | tail -n1 | cut -d ' ' -f 6", $this->pyloadSettingsFile);
@@ -86,68 +79,24 @@ class OMVRpcServicePyload extends OMVRpcServiceAbstract
         }
 
         // Modify result data
-        $object['enable']  = boolval($object['enable']);
-        $object['showtab'] = boolval($object['showtab']);
-        $object['port']    = $output[0];
-        return $object;
+        $object->add('port', 'integer');
+        $object->set('port', intval($port));
+
+        return $object->getAssoc();
     }
 
     public function setSettings($params, $context)
     {
-        global $xmlConfig;
-
-        $this->validateMethodContext($context, array(
-            "role" => OMV_ROLE_ADMINISTRATOR
-        ));
-
-        $this->validateMethodParams(
-            $params,
-            '{
-                "type"       : "object",
-                "properties" : {
-                    "enable"  : { "type" : "boolean" },
-                    "showtab" : { "type" : "boolean" },
-                    "port"    : { "type" : "integer" }
-                }
-            }'
-        );
+        $this->validateMethodContext($context, ['role' => OMV_ROLE_ADMINISTRATOR]);
 
         // Get existing configuration object
-        $oldObject = $xmlConfig->get($this->getXPath());
+        $oldObject = $this->database->get($this->dataModelPath);
 
-        if (is_null($oldObject)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_GET_OBJECT_FAILED,
-                $this->getXPath()
-            );
-        }
+        $oldObject->setAssoc($params);
 
-        // Prepare configuration data
-        $object = array(
-            "enable"    => array_boolval($params, "enable"),
-            "showtab"   => array_boolval($params, "showtab"),
-            "port"      => $params["port"],
-        );
+        $this->database->set($oldObject);
+        $this->dispatcher->notify(OMV_NOTIFY_MODIFY, $this->eventMessagePath, $oldObject);
 
-        // Set configuration object
-        if (false === $xmlConfig->replace($this->getXPath(), $object)) {
-            throw new OMVException(
-                OMVErrorMsg::E_CONFIG_SET_OBJECT_FAILED,
-                $this->getXPath()
-            );
-        }
-
-        // Notify configuration changes
-        $dispatcher = &OMVNotifyDispatcher::getInstance();
-        $dispatcher->notify(
-            OMV_NOTIFY_MODIFY,
-            $this->getEventMessagePath(),
-            $object
-        );
+        return $oldObject->getAssoc();
     }
-
 }
-
-// Register the RPC service.
-$rpcServiceMgr = &OMVRpcServiceMgr::getInstance();
-$rpcServiceMgr->registerService(new OMVRpcServicePyload());

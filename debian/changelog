@@ -1,50 +1,5 @@
-openmediavault-pyload (1.0.5) unstable; urgency=low
+openmediavault-pyload (3.0) stable; urgency=low
 
-  * Update to latest pyload version
+  * OMV 3.0 release
 
- -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Thu, 18 Aug 2016 23:33:00 -0000
-
-openmediavault-pyload (1.0.5) unstable; urgency=low
-
-  * Update to latest pyload version
-
- -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Tue, 03 Nov 2015 16:21:00 -0000
-
-openmediavault-pyload (1.0.3) unstable; urgency=low
-
-  * Update to latest pyload version
-
- -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Fri, 12 Dec 2014 11:28:59 -0000
-
-openmediavault-pyload (1.0.2) unstable; urgency=low
-
-  * Add custom debian/control field XB-Plugin-Section
-
- -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Fri, 12 Dec 2014 07:02:59 -0600
-
-openmediavault-pyload (1.0.1) unstable; urgency=low
-
-  * spidermonkey-bin dependency
-
- -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Mon, 06 Sep 2014 06:45:08 -0500
-
-openmediavault-pyload (1.0.0) unstable; urgency=low
-
-  * Fix Web Tab
-
- -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Mon, 11 Aug 2014 05:37:08 -0500
-
-openmediavault-pyload (0.6.0) unstable; urgency=low
-
-  * Initial release for kralizec
-
- -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Thu, 29 May 2014 06:51:29 -0500
-
-openmediavault-pyload (0.5.0) stable; urgency=low
-
-  [ OpenMediaVault Plugin Developers ]
-  * Initial release
-
-  [ root ]
-
- -- root <root@localhost.localdomain>  Fri, 07 Feb 2014 15:39:55 +0000
+ -- OpenMediaVault Plugin Developers <plugins@omv-extras.org>  Sat, 20 Aug 2016 10:30:00 -0000
